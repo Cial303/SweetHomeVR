@@ -279,6 +279,7 @@ export class XRExperience {
 	/** model: { group, layers, bounds (Box3, model space, no ground), observer, skyColor, multiLevel } */
 	setModel(model) {
 		this.model = model;
+		this._targets = null; // mesh sets for raycasts, rebuilt on demand
 		this.centerer.add(...this.markers);
 		const size = model.bounds.getSize(new THREE.Vector3());
 		this.baseScale = DOLLHOUSE_SIZE / Math.max(size.x, size.z, 0.01);
@@ -307,11 +308,22 @@ export class XRExperience {
 
 	/** kind: 'ar' (both views, switchable in the menu) or 'vr' (VR only). */
 	async start(kind) {
-		if (!this.model || this.session) return;
-		const session = await navigator.xr.requestSession(kind === 'ar' ? 'immersive-ar' : 'immersive-vr', {
-			requiredFeatures: ['local-floor'],
-			optionalFeatures: ['bounded-floor'],
-		});
+		if (!this.model || this.session || this.starting) return;
+		this.starting = true;
+		const init = { requiredFeatures: ['local-floor'], optionalFeatures: ['bounded-floor'] };
+		let session;
+		try {
+			try {
+				session = await navigator.xr.requestSession(kind === 'ar' ? 'immersive-ar' : 'immersive-vr', init);
+			} catch (e) {
+				// Passthrough refused or unavailable: plain VR still works.
+				if (kind !== 'ar') throw e;
+				kind = 'vr';
+				session = await navigator.xr.requestSession('immersive-vr', init);
+			}
+		} finally {
+			this.starting = false;
+		}
 		this.renderer.xr.setReferenceSpaceType('local-floor');
 		this.renderer.xr.setFramebufferScaleFactor(1);
 		await this.renderer.xr.setSession(session);
@@ -631,16 +643,20 @@ export class XRExperience {
 	 * walls, so stairs work. Walls always stop the arc.
 	 */
 	targets() {
+		// Built once per model: this is asked for several times every frame.
+		if (this._targets) return this._targets;
 		const L = this.model.layers;
 		const walls = L.walls?.children ?? [];
 		const anywhere = this.model.multiLevel || L.floors.children.length === 0;
 		const walkable = [...L.floors.children, ...L.ground.children, ...(anywhere ? L.main.children : [])];
-		return {
+		this._targets = {
 			pointable: [...L.main.children, ...walls, ...L.floors.children],
 			floors: [...L.floors.children, ...L.ground.children],
 			solid: [...walls, ...walkable],
 			walkable: new Set(walkable),
+			walkableList: walkable,
 		};
+		return this._targets;
 	}
 
 	/**
@@ -700,6 +716,8 @@ export class XRExperience {
 			if (markers[i]) m.position.copy(this.centerer.worldToLocal(markers[i].clone()));
 		});
 
+		// A controller that drops out mid-grab (battery, tracking) lets go.
+		if (this.grab && (!this.grab.c.source || !this.grab.c.state.grip)) this.grab = null;
 		if (this.grab) {
 			const p = new THREE.Vector3();
 			const yaw = this.input.pose(this.grab.c, p);
@@ -825,7 +843,7 @@ export class XRExperience {
 		const feet = this.rig.position.y - this.lift;
 		this.floorRay.set(new THREE.Vector3(head.x, feet + STEP, head.z), DOWN);
 		this.floorRay.far = 2 * STEP;
-		const hits = this.floorRay.intersectObjects([...this.targets().walkable], false);
+		const hits = this.floorRay.intersectObjects(this.targets().walkableList, false);
 		const h = hits.find((x) => worldNormal(x).y > 0.7);
 		if (!h) return;
 		const k = Math.min(1, dt * 12); // a quick ease, so steps don't jolt

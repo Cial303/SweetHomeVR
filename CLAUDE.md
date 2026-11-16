@@ -11,6 +11,7 @@ WebXR viewer for Meta Quest 2 that opens Sweet Home 3D (`.sh3d`) files directly 
 - Hosted on GitHub Pages (HTTPS is required for WebXR). The same URL works on desktop Chrome/Safari as a 2D orbit preview.
 - Quest Browser file picker: read picked files with `await file.arrayBuffer()` immediately; never create a blob URL from a picked `File`; no restrictive `accept` attribute; accept `.zip` wherever `.sh3d` is accepted.
 - Quest 2 is a phone GPU: merged geometry by material (< ~150 draw calls), BVH for every raycast, Lambert materials. Shadows only as the optional on-demand map in lighting.js (never per-frame); no post-process or temporal anti-aliasing (flickers).
+- Model files and links are untrusted input (see "Safety" in SPEC.md): never fetch a URL found inside a model, never build HTML from file content (use `textContent`), keep the zip, download and texture limits, and keep the Content Security Policy in `index.html` strict (no `unsafe-inline` or `unsafe-eval` for scripts, no outside hosts). If the import map changes, update its hash in the policy; `npm test` checks it.
 - Out of scope: editing, collaboration, accounts, measurements, scenes.
 
 ## Layout
@@ -27,6 +28,7 @@ js/xr-input.js    controllers, rays, thumbsticks, teleport arc, snap turn
 js/panel.js       canvas-texture VR menu and controls card
 js/lighting.js    time of day (sun from the compass) and on-demand shadows
 js/storage.js     IndexedDB recent files
+js/links.js       which links may be downloaded, Dropbox link rewrite (pure, Node-testable)
 vendor/           vendored dependencies + licences
 tests/            Node tests (node:test)
 scripts/          vendoring, fixtures, local server, screenshots, emulated XR test

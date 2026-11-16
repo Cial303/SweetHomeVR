@@ -67,7 +67,18 @@ The **Open from Dropbox** button uses Dropbox's official [Chooser](https://www.d
 2. In the app's **Settings**, add your site's domain (e.g. `yourname.github.io`) under **Chooser / Saver / Embedder domains**.
 3. Put the **App key** (not the secret) in `config.js` as `dropboxAppKey`.
 
+4. In `index.html`, add `https://www.dropbox.com` to `script-src` in the Content Security Policy, and add `frame-src https://www.dropbox.com`. Without this the page refuses to load Dropbox's script.
+
 Without a key the button is simply hidden. The Chooser script is the only file loaded from another site (dropbox.com), and only when a key is set.
+
+## Safety and privacy
+
+- **Your home stays on your device.** Models are read in the browser. Nothing is uploaded, and there is no analytics or tracking. Recent models are kept in the browser's own storage (IndexedDB) on that device; remove them with the × beside each one.
+- **Opening a model cannot contact other websites.** A model file can contain links to images on other servers. They are never followed (the status line says how many were ignored), so a file cannot be used to see who opens it.
+- **Links.** Only `https://` links are downloaded, up to 500 MB, without cookies or a referrer. A `?model=` address that points to another site is not opened automatically: it is put in the link box and waits for you to press **Open from link**.
+- **Oversized files.** Archives that would unpack to more than 1 GB or 50,000 files are refused before unpacking, and textures above 2048 pixels are shrunk to fit a Quest 2's memory. The limits are in `config.js` and `js/formats.js`.
+- **The page only runs its own code.** A Content Security Policy in `index.html` allows scripts from this site only, with the import map pinned by its hash. All libraries are vendored; nothing loads from a CDN. If you edit the import map, `npm test` tells you the new hash.
+- **What it cannot prevent.** A deliberately broken or enormous model can still make the browser tab slow or crash, as with any 3D viewer. It cannot reach your files, your account or other sites.
 
 ## Development
 
@@ -77,7 +88,7 @@ Requires Node 24 (`nvm use`). The app itself has no dependencies to install; `np
 npm install            # dev tools (Playwright) and the libraries to vendor
 npm run vendor         # copy three.js, three-mesh-bvh and fflate into vendor/
 npm run fixtures       # download the public Sweet Home 3D example homes
-npm test               # parser tests (Node)
+npm test               # parser, lighting and safety tests (Node)
 npx playwright install chromium
 npm run shots          # screenshots of each fixture into test-output/
 npm run xr-test        # scripted VR session on an emulated Quest 2 (Meta's IWER)
@@ -98,6 +109,7 @@ js/panel.js       canvas-texture VR menu and controls card
 js/lighting.js    time of day (sun from the home's compass) and shadows
 js/optimise.js    merge geometry by material, BVH for raycasts
 js/storage.js     recent models (IndexedDB)
+js/links.js       which links may be downloaded; Dropbox link rewrite (no DOM)
 js/sh3d.js        SH3D parser and scene builder (no DOM; Node-testable)
 js/formats.js     zip / OBJ / GLB / DAE / 3DS loading, unit detection
 vendor/           three.js, three-mesh-bvh, fflate (with licences)

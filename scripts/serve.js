@@ -16,8 +16,10 @@ const TYPES = {
 export function startServer(p = port) {
 	const server = http.createServer((req, res) => {
 		const url = new URL(req.url, 'http://localhost');
-		let file = path.join(root, decodeURIComponent(url.pathname));
-		if (!file.startsWith(root)) { res.writeHead(403).end(); return; }
+		let file;
+		try { file = path.join(root, decodeURIComponent(url.pathname)); } catch { res.writeHead(400).end(); return; }
+		// Only files inside the project folder (not a sibling whose name starts the same).
+		if (file !== root && !file.startsWith(root + path.sep)) { res.writeHead(403).end(); return; }
 		if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
 		fs.readFile(file, (err, data) => {
 			if (err) { res.writeHead(404).end('Not found'); return; }

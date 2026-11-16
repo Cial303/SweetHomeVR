@@ -5,6 +5,10 @@
 // modifier that serves those bytes as blob URLs. Blob URLs are only ever made
 // from our own in-memory bytes, never from a picked File (Quest Browser bug,
 // see SPEC.md).
+//
+// Safety: a model file is untrusted input. Nothing in it can make the app
+// contact another server (links inside models are blocked, see EntryStore),
+// and archives that would unpack to an absurd size are refused.
 
 import * as THREE from 'three';
 import { unzipSync } from 'fflate';
@@ -45,7 +49,13 @@ function imageMime(bytes) {
 	return 'application/octet-stream';
 }
 
-const WHITE_PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=';
+// A valid 1x1 opaque white PNG (stands in for missing or blocked images).
+export const WHITE_PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII=';
+
+// Limits for ZIP archives (.sh3d, .zip and zipped models inside them), counted
+// over one opened file including nested archives. A "zip bomb" is a tiny file
+// that unpacks to gigabytes and crashes the browser tab.
+export const ZIP_LIMITS = { bytes: 1024 * 1048576, entries: 50000 };
 
 const normPath = (p) => {
 	const out = [];
@@ -65,26 +75,72 @@ const extOf = (p) => (p.includes('.') ? p.slice(p.lastIndexOf('.') + 1).toLowerC
 
 /** A set of in-memory files addressable by path, served to loaders as blob URLs. */
 export class EntryStore {
-	constructor(entries = new Map()) {
-		this.entries = entries; // Map<path, Uint8Array>
+	/**
+	 * @param entries Map<path, Uint8Array>
+	 * @param budget  { bytes, entries } still allowed for nested archives (shared with them)
+	 */
+	constructor(entries = new Map(), budget = { ...ZIP_LIMITS }) {
+		this.entries = entries;
+		this.budget = budget;
 		this.urls = new Map();
+		this.children = []; // stores of zipped models inside this one
+		this.blocked = 0; // links to other servers found inside models (never fetched)
+		this.busy = false;
+		this.waiters = [];
 		this.manager = new THREE.LoadingManager();
+		this.manager.onStart = () => { this.busy = true; };
+		this.manager.onLoad = () => { this.busy = false; for (const f of this.waiters.splice(0)) f(); };
 		// Loaders request "mem:<path>"; we answer with a blob URL for those bytes.
+		// Embedded data (data: URIs, and blob: URLs the glTF loader makes from the
+		// file's own bytes) passes through. Anything else is a link to another
+		// server written inside the model: it is never fetched, so opening a
+		// model cannot be used to track who opens it or to reach other sites.
 		this.manager.setURLModifier((url) => {
-			if (!url.startsWith('mem:')) return url;
-			const path = this.find(url.slice(4));
-			// A missing texture becomes a 1x1 white pixel rather than a failed request.
-			return path ? this.url(path) : WHITE_PIXEL;
+			if (url.startsWith('mem:')) {
+				const path = this.find(url.slice(4));
+				// A missing texture becomes a 1x1 white pixel rather than a failed request.
+				return path ? this.url(path) : WHITE_PIXEL;
+			}
+			if (/^(data|blob):/i.test(url)) return url;
+			this.blocked++;
+			return WHITE_PIXEL;
 		});
 	}
 
-	static fromZip(bytes) {
+	/** Unpacks a ZIP, refusing archives over the size and entry limits before unpacking anything. */
+	static fromZip(bytes, budget = { ...ZIP_LIMITS }) {
 		let files;
-		try { files = unzipSync(bytes); } catch (e) { throw new UserError('This file is not a valid ZIP archive.'); }
-		const m = new Map();
-		for (const [k, v] of Object.entries(files)) if (!k.endsWith('/')) m.set(k, v);
-		return new EntryStore(m);
+		let tooBig = false;
+		try {
+			// The filter sees each entry's declared size first; fflate never writes
+			// past that size, so the declared total is a true upper bound.
+			files = unzipSync(bytes, { filter: (f) => {
+				if (tooBig || f.name.endsWith('/')) return false;
+				budget.entries -= 1;
+				budget.bytes -= f.originalSize;
+				if (budget.entries < 0 || budget.bytes < 0) tooBig = true;
+				return !tooBig;
+			} });
+		} catch (e) { throw new UserError('This file is not a valid ZIP archive.'); }
+		if (tooBig) throw new UserError(`This file is too large to open: it unpacks to more than ${Math.round(ZIP_LIMITS.bytes / 1048576)} MB or ${ZIP_LIMITS.entries.toLocaleString('en-GB')} files.`);
+		return new EntryStore(new Map(Object.entries(files)), budget);
 	}
+
+	/** Opens a ZIP stored inside this one (a zipped model); it is disposed with this store. */
+	child(bytes) {
+		const c = EntryStore.fromZip(bytes, this.budget);
+		this.children.push(c);
+		return c;
+	}
+
+	/** Resolves once every texture requested so far (here and in nested archives) has loaded or failed. */
+	whenIdle() {
+		const mine = this.busy ? new Promise((r) => this.waiters.push(r)) : Promise.resolve();
+		return Promise.all([mine, ...this.children.map((c) => c.whenIdle())]);
+	}
+
+	/** Total links to other servers that were blocked, including nested archives. */
+	blockedLinks() { return this.children.reduce((n, c) => n + c.blockedLinks(), this.blocked); }
 
 	get(path) { const p = this.find(path); return p ? this.entries.get(p) : null; }
 
@@ -126,7 +182,17 @@ export class EntryStore {
 		return this.urls.get(path);
 	}
 
-	dispose() { for (const u of this.urls.values()) URL.revokeObjectURL(u); this.urls.clear(); }
+	/**
+	 * Frees the unpacked files and their blob URLs. Call once the model is
+	 * built and its textures have loaded (whenIdle): the scene keeps its own
+	 * geometry and decoded images, so the raw files are only wasted memory.
+	 */
+	dispose() {
+		for (const u of this.urls.values()) URL.revokeObjectURL(u);
+		this.urls.clear();
+		this.entries.clear();
+		for (const c of this.children.splice(0)) c.dispose();
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -173,11 +239,12 @@ export async function loadModelEntry(store, path) {
 	if (!bytes) throw new Error(`Missing entry ${path}`);
 	const kind = sniff(bytes);
 	if (kind === 'zip') {
-		// Nested zip: find the model inside it.
-		const inner = EntryStore.fromZip(bytes);
+		// Nested zip: find the model inside it. Its blob URLs stay alive for
+		// the textures until the parent store is disposed.
+		const inner = store.child(bytes);
 		const main = findMainModel([...inner.entries.keys()], inner);
 		if (!main) throw new Error(`No model inside ${path}`);
-		try { return await loadModelEntry(inner, main); } finally { /* blob URLs stay alive for textures */ }
+		return loadModelEntry(inner, main);
 	}
 	const folder = dirOf(store.find(path));
 	const base = `mem:${folder}`;
@@ -347,25 +414,41 @@ export async function openFiles(files, opts = {}) {
 	const progress = opts.onProgress || (() => {});
 
 	let store;
-	let mainPath = null;
-	if (files.length === 1 && sniff(files[0].bytes) === 'zip') {
-		progress('Unzipping…');
-		store = EntryStore.fromZip(files[0].bytes);
-		if (store.entries.has('Home.xml')) return openSh3d(store, progress);
-		if (store.entries.has('Home')) throw new UserError('Re-save this file in Sweet Home 3D 5.3 or later.');
-		mainPath = findMainModel([...store.entries.keys()], store);
-		if (!mainPath) throw new UserError('No 3D model (.sh3d, .obj, .glb, .dae, .3ds) found inside this ZIP.');
-	} else {
-		store = new EntryStore(new Map(files.map((f) => [f.name, f.bytes])));
-		const names = files.map((f) => f.name);
-		mainPath = names.find((n) => MODEL_EXTS.includes(extOf(n))) || names.find((n) => ['glb', 'dae', '3ds'].includes(sniff(store.entries.get(n)))) || names[0];
-	}
+	try {
+		let mainPath = null;
+		if (files.length === 1 && sniff(files[0].bytes) === 'zip') {
+			progress('Unzipping…');
+			store = EntryStore.fromZip(files[0].bytes);
+			if (store.entries.has('Home.xml')) return await openSh3d(store, progress);
+			if (store.entries.has('Home')) throw new UserError('Re-save this file in Sweet Home 3D 5.3 or later.');
+			mainPath = findMainModel([...store.entries.keys()], store);
+			if (!mainPath) throw new UserError('No 3D model (.sh3d, .obj, .glb, .dae, .3ds) found inside this ZIP.');
+		} else {
+			// Picked files are copied into a new Map, so disposing the store
+			// never touches the caller's list (it is saved under Recent).
+			store = new EntryStore(new Map(files.map((f) => [f.name, f.bytes])));
+			const names = files.map((f) => f.name);
+			mainPath = names.find((n) => MODEL_EXTS.includes(extOf(n))) || names.find((n) => ['glb', 'dae', '3ds'].includes(sniff(store.entries.get(n)))) || names[0];
+		}
 
-	progress('Loading model…');
-	const object = await loadModelEntry(store, mainPath);
-	const fmt = sniff(store.get(mainPath));
-	const isMetric = fmt === 'glb' || fmt === 'gltf' || fmt === 'dae'; // glTF is metres; COLLADA declares its own unit
-	return placeModel(object, store, { units: isMetric ? 'm' : opts.units || 'auto', name: baseName(mainPath) });
+		progress('Loading model…');
+		const fmt = sniff(store.get(mainPath));
+		const object = await loadModelEntry(store, mainPath);
+		const isMetric = fmt === 'glb' || fmt === 'gltf' || fmt === 'dae'; // glTF is metres; COLLADA declares its own unit
+		return placeModel(object, store, { units: isMetric ? 'm' : opts.units || 'auto', name: baseName(mainPath) });
+	} catch (e) {
+		store?.dispose(); // a failed load must not leave its files in memory
+		throw e;
+	}
+}
+
+/** Lets the page repaint (progress text) if the last pause was a while ago. */
+let lastPause = 0;
+async function breathe() {
+	const now = Date.now();
+	if (now - lastPause < 50) return;
+	await new Promise((r) => setTimeout(r, 0));
+	lastPause = Date.now();
 }
 
 async function openSh3d(store, progress) {
@@ -373,7 +456,9 @@ async function openSh3d(store, progress) {
 	const home = parseHome(new TextDecoder().decode(store.entries.get('Home.xml')));
 	const texLoader = new THREE.TextureLoader(store.manager);
 	const built = await buildHome(home, {
-		loadModel: (ref) => loadModelEntry(store, ref),
+		// Pause between models so the "Loading furniture" count is actually
+		// painted instead of the page freezing until the end.
+		loadModel: async (ref) => { await breathe(); return loadModelEntry(store, ref); },
 		loadTexture: (ref) => (store.find(ref) ? texLoader.load(`mem:${ref}`) : null),
 		onProgress: (done, total) => progress(`Loading furniture ${done}/${total}…`),
 	});

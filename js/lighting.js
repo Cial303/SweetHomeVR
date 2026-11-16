@@ -148,10 +148,16 @@ export class Lighting {
 		const s = this.subject;
 		if (!s) return;
 		s.object.updateMatrixWorld(true);
-		// Nothing moved and nothing changed: keep the current shadow map.
-		const key = `${this.time}|${this.shadows}|${s.object.matrixWorld.elements.join(',')}|${s.box.min.toArray()}|${s.box.max.toArray()}`;
-		if (key === this._lastFit) return;
-		this._lastFit = key;
+		// Nothing moved and nothing changed: keep the current shadow map. This
+		// runs every frame in the dollhouse, so it compares numbers in place
+		// rather than building a string.
+		const e = s.object.matrixWorld.elements;
+		const last = (this._lastFit ||= { time: null, shadows: null, box: null, m: new Float64Array(16) });
+		let same = last.time === this.time && last.shadows === this.shadows && last.box === s.box;
+		for (let i = 0; same && i < 16; i++) same = last.m[i] === e[i];
+		if (same) return;
+		last.time = this.time; last.shadows = this.shadows; last.box = s.box;
+		last.m.set(e);
 		const sphere = s.box.clone().applyMatrix4(s.object.matrixWorld).getBoundingSphere(new THREE.Sphere());
 		const r = Math.max(sphere.radius * 1.3, 0.05);
 		const dir = sunDirection(this.compass, this.time).transformDirection(s.object.matrixWorld);

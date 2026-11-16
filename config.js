@@ -7,6 +7,14 @@ export const CONFIG = {
 	// Warn (but still load) above this many triangles; Quest 2 is a phone GPU.
 	triangleWarning: 1_500_000,
 
+	// Largest file a link may download, in MB (a wrong or hostile link must
+	// not be able to fill the headset's memory).
+	maxDownloadMB: 500,
+
+	// Textures larger than this (pixels on the longer side) are shrunk after
+	// loading: a few 4K images are enough to exhaust a Quest 2's memory.
+	maxTextureSize: 2048,
+
 	// Default unit for OBJ files without a unit override ('auto' | 'cm' | 'm' | 'mm' | 'in').
 	defaultObjUnits: 'auto',
 };

@@ -304,9 +304,11 @@ s = await page.evaluate(async (top) => {
 	const x = window.__svr.xr;
 	const was = x.model.multiLevel;
 	x.model.multiLevel = true;
+	x._targets = null; // the mesh sets are cached per model
 	const t = x.targets(), p = new THREE.Vector3(...top);
 	const seg = x.hitSegment(p.clone().setY(p.y + 0.5), p.clone().setY(-0.05), t);
 	x.model.multiLevel = was;
+	x._targets = null;
 	return { arcLands: seg ? +seg.point.y.toFixed(2) : null, arcValid: seg?.valid };
 }, s.topPoint);
 check('several levels: you can stand on furniture', s.arcValid === true && s.arcLands > 0.25, JSON.stringify(s));

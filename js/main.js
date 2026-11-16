@@ -9,6 +9,7 @@ import { openFiles, UserError } from './formats.js';
 import { optimiseModel } from './optimise.js';
 import { XRExperience } from './xr.js';
 import { Lighting, TIMES } from './lighting.js';
+import { checkLink, fileNameOf } from './links.js';
 import { listRecents, getRecent, addRecent, removeRecent, getLastLink, setLastLink } from './storage.js';
 
 const $ = (id) => document.getElementById(id);
@@ -39,6 +40,14 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.maxPolarAngle = Math.PI * 0.495; // stay above the ground
 
+// The 2D page only redraws when something changed (the camera moved, a model
+// or texture arrived, the light changed), so an idle page does not keep the
+// headset's GPU busy. A slow heartbeat covers anything that forgot to ask.
+let dirty = true, lastDraw = 0;
+const invalidate = () => { dirty = true; };
+const IDLE_REDRAW_MS = 500;
+controls.addEventListener('change', invalidate);
+
 // One hemisphere light and one sun; time of day and optional shadows (lighting.js).
 const lighting = new Lighting(scene, renderer);
 const LIGHT_KEYS = { time: 'svr.time', shadows: 'svr.shadows' };
@@ -62,6 +71,7 @@ const xr = new XRExperience({ renderer, scene, camera, rig, anchor, centerer, li
 	scene.background = lighting.background();
 	lighting.fit();
 	frame('iso');
+	invalidate();
 } });
 
 // When the light changes (here or from the headset menu): remember it and update the views.
@@ -74,6 +84,7 @@ lighting.onChange = () => {
 	xr.updateLabels();
 	$('time').value = lighting.time;
 	$('shadows').checked = lighting.shadows;
+	invalidate();
 };
 lighting.onChange();
 
@@ -82,14 +93,22 @@ window.addEventListener('resize', () => {
 	camera.aspect = window.innerWidth / window.innerHeight;
 	camera.updateProjectionMatrix();
 	renderer.setSize(window.innerWidth, window.innerHeight);
+	invalidate();
 });
 
 const timer = new THREE.Timer();
 renderer.setAnimationLoop((time) => {
 	timer.update(time);
 	const dt = Math.min(timer.getDelta(), 0.1);
-	if (renderer.xr.isPresenting) xr.update(dt);
-	else controls.update();
+	if (renderer.xr.isPresenting) {
+		xr.update(dt);
+		renderer.render(scene, camera);
+		return;
+	}
+	controls.update(); // fires "change" while the camera is still moving
+	if (!dirty && time - lastDraw < IDLE_REDRAW_MS) return;
+	dirty = false;
+	lastDraw = time;
 	renderer.render(scene, camera);
 });
 
@@ -114,10 +133,6 @@ function sceneStats(root) {
 	return { triangles: Math.round(triangles), drawCalls };
 }
 
-function escapeHtml(t) {
-	return String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-}
-
 function showStats() {
 	if (!current) { $('stats').textContent = ''; return; }
 	const { triangles, drawCalls } = sceneStats(current.root);
@@ -130,9 +145,11 @@ function showStats() {
 	} else if (current.unit) {
 		lines.push(`Units: ${current.unit}`);
 	}
-	const html = [`<div class="name">${escapeHtml(current.label || '')}</div>`, ...lines.map((l) => `<div>${l}</div>`)];
-	if (triangles > CONFIG.triangleWarning) html.push(`<div class="warn">Heavy model: over ${fmt(CONFIG.triangleWarning)} triangles may run slowly on Quest 2.</div>`);
-	$('stats').innerHTML = html.join('');
+	// Built as text nodes, never as HTML: file names come from outside.
+	const row = (text, cls) => { const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = text; return d; };
+	const rows = [row(current.label || '', 'name'), ...lines.map((l) => row(l))];
+	if (triangles > CONFIG.triangleWarning) rows.push(row(`Heavy model: over ${fmt(CONFIG.triangleWarning)} triangles may run slowly on Quest 2.`, 'warn'));
+	$('stats').replaceChildren(...rows);
 	return { triangles, drawCalls };
 }
 
@@ -157,11 +174,18 @@ function disposeCurrent() {
  * source: { type: 'link', url } | { type: 'file' } | { type: 'recent' } (not re-saved)
  */
 async function load(files, label, source = { type: 'file' }) {
+	// If another model is opened before this one finishes, this one is dropped.
+	const seq = ++loadSeq;
+	const superseded = (result) => { if (seq === loadSeq) return false; result.store?.dispose(); return true; };
 	setStatus(`Opening ${label}…`);
+	loading++;
+	updateXRButtons(); // no Enter VR while a model is being swapped in
 	try {
-		const result = await openFiles(files, { units: $('units').value, onProgress: (t) => setStatus(t) });
+		const result = await openFiles(files, { units: $('units').value, onProgress: (t) => { if (seq === loadSeq) setStatus(t); } });
+		if (superseded(result)) return;
 		setStatus('Optimising for Quest…');
 		await new Promise((r) => setTimeout(r, 0)); // let the status paint
+		if (superseded(result)) return;
 		// ?nomerge (debugging only): show the scene exactly as loaded.
 		const merged = new URLSearchParams(location.search).has('nomerge')
 			? { group: result.root, layers: Object.fromEntries(['main', 'walls', 'floors', 'ceilings', 'ground'].map((n) => [n, result.root.getObjectByName(n === 'main' ? 'furniture' : n) || new THREE.Group()])), stats: null }
@@ -177,27 +201,71 @@ async function load(files, label, source = { type: 'file' }) {
 		// anything, so stairs work. One level: you stay on the floor.
 		const elevations = new Set([...(result.home?.levels.values() ?? [])].filter((l) => l.viewable).map((l) => l.elevation));
 		xr.setModel({ group: current.root, layers: current.layers, bounds: current.bounds, observer: current.observer, skyColor: result.home?.skyColor, multiLevel: elevations.size > 1 });
-		// Sharper textures at grazing angles (floors), without any flicker.
-		const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-		current.root.traverse((o) => {
-			for (const m of [].concat(o.material || [])) {
-				if (m.map && m.map.anisotropy !== aniso) { m.map.anisotropy = aniso; m.map.needsUpdate = true; }
-			}
-		});
+		prepareTextures(current.root);
 		lighting.setHome({ compass: result.home?.compass, skyColor: result.home?.skyColor });
 		lighting.setSubject(centerer, current.bounds);
 		frame('iso');
-		updateXRButtons();
-		setStatus(`Loaded ${label}.`);
+		invalidate();
+		// Links to other websites written inside a model are never followed.
+		const blocked = current.store?.blockedLinks() ?? 0;
+		setStatus(`Loaded ${label}.${blocked ? ` ${blocked} link${blocked > 1 ? 's' : ''} to other websites inside the file ${blocked > 1 ? 'were' : 'was'} ignored.` : ''}`);
 		showStats();
+		// Once the textures have arrived: shrink any oversized ones and free
+		// the unpacked files, which the scene no longer needs.
+		const store = current.store;
+		store?.whenIdle().then(() => {
+			if (current?.store !== store) return;
+			prepareTextures(current.root);
+			store.dispose();
+			invalidate();
+		});
 		document.title = `${label} · Sweet Home VR`;
 		// Remember it for one-tap reopening (only once it opened successfully).
 		if (source.type !== 'recent') addRecent({ name: label, files, source }).then(renderRecents);
 	} catch (e) {
 		console.error(e);
-		setStatus(e instanceof UserError ? e.message : `Could not open ${label}: ${e.message}`, true);
+		if (seq === loadSeq) setStatus(e instanceof UserError ? e.message : `Could not open ${label}: ${e.message}`, true);
 		throw e;
+	} finally {
+		loading--;
+		updateXRButtons();
 	}
+}
+
+let loadSeq = 0; // the newest load() call
+let loading = 0; // loads in progress
+
+/**
+ * Textures: sharper filtering at grazing angles (floors) without any
+ * flicker, and nothing larger than CONFIG.maxTextureSize, because a few
+ * 4K images are enough to exhaust a Quest 2's memory. Images that have not
+ * arrived yet are handled on the second call, once loading is idle.
+ */
+function prepareTextures(root) {
+	const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+	const max = CONFIG.maxTextureSize;
+	const seen = new Set();
+	root.traverse((o) => {
+		for (const m of [].concat(o.material || [])) {
+			const t = m.map;
+			if (!t || seen.has(t)) continue;
+			seen.add(t);
+			const img = t.image;
+			const w = img?.naturalWidth || img?.width || 0, h = img?.naturalHeight || img?.height || 0;
+			let changed = false;
+			if (w && h && Math.max(w, h) > max) {
+				const k = max / Math.max(w, h);
+				const c = document.createElement('canvas');
+				c.width = Math.max(1, Math.round(w * k));
+				c.height = Math.max(1, Math.round(h * k));
+				c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+				t.image = c;
+				changed = true;
+			}
+			if (t.anisotropy !== aniso) { t.anisotropy = aniso; changed = true; }
+			if (changed && w && h) t.needsUpdate = true; // an image still loading uploads itself later
+		}
+	});
 }
 
 /** Fits the camera to the model. view: 'iso' | 'ne' | 'nw' | 'se' | 'sw' | 'top'. */
@@ -225,30 +293,23 @@ function frame(view = 'iso') {
 }
 
 /**
- * Rewrites Dropbox shared links to a direct, CORS-enabled download URL:
- * www.dropbox.com -> dl.dropboxusercontent.com, force dl=1, keep rlkey.
- * This is an unofficial workaround (SPEC.md); failures are reported politely.
- */
-export function directLink(url) {
-	let u;
-	try { u = new URL(url.trim()); } catch { return url.trim(); }
-	if (/(^|\.)dropbox\.com$/i.test(u.hostname) && !/dropboxusercontent/i.test(u.hostname)) {
-		u.hostname = 'dl.dropboxusercontent.com';
-		u.searchParams.delete('raw');
-		u.searchParams.set('dl', '1');
-	}
-	return u.toString();
-}
-
-/**
  * Downloads a URL into bytes, showing progress in the status line.
  * no-store: after editing the home on the Mac, always get the new version.
  */
 async function download(url, name, expectedSize = 0) {
-	const res = await fetch(url, { cache: 'no-store' });
+	// A size limit, so a wrong or hostile link cannot fill the memory.
+	const max = CONFIG.maxDownloadMB * 1048576;
+	const tooBig = () => new UserError(`That file is larger than ${CONFIG.maxDownloadMB} MB, which is too large to open here.`);
+	// No cookies and no "where from" header go to the other site.
+	const res = await fetch(url, { cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' });
 	if (!res.ok) throw new Error(`HTTP ${res.status}`);
 	const total = expectedSize || Number(res.headers.get('Content-Length')) || 0;
-	if (!res.body || !total) return new Uint8Array(await res.arrayBuffer());
+	if (total > max) { res.body?.cancel().catch(() => {}); throw tooBig(); }
+	if (!res.body) {
+		const all = new Uint8Array(await res.arrayBuffer());
+		if (all.length > max) throw tooBig();
+		return all;
+	}
 	const reader = res.body.getReader();
 	const chunks = [];
 	let got = 0;
@@ -257,7 +318,9 @@ async function download(url, name, expectedSize = 0) {
 		if (done) break;
 		chunks.push(value);
 		got += value.length;
-		setStatus(`Downloading ${name}… ${Math.min(100, Math.round((got / total) * 100))}% of ${(total / 1048576).toFixed(1)} MB`);
+		if (got > max) { reader.cancel().catch(() => {}); throw tooBig(); }
+		const mb = (n) => (n / 1048576).toFixed(1);
+		setStatus(total ? `Downloading ${name}… ${Math.min(100, Math.round((got / total) * 100))}% of ${mb(total)} MB` : `Downloading ${name}… ${mb(got)} MB`);
 	}
 	const bytes = new Uint8Array(got);
 	let off = 0;
@@ -267,14 +330,15 @@ async function download(url, name, expectedSize = 0) {
 
 async function loadUrl(url, { remember = true } = {}) {
 	url = url.trim();
-	const direct = directLink(url);
-	const name = decodeURIComponent(new URL(direct, location.href).pathname.split('/').pop() || 'model');
+	const link = checkLink(url, location.href);
+	if (!link.ok) { setStatus(link.error, true); throw new UserError(link.error); }
+	const name = fileNameOf(link.url);
 	setStatus(`Downloading ${name}…`);
 	let bytes;
 	try {
-		bytes = await download(direct, name);
+		bytes = await download(link.url, name);
 	} catch (e) {
-		setStatus(`Could not download that link (${e.message}). For Dropbox, use a shared link to a single file.`, true);
+		setStatus(e instanceof UserError ? e.message : `Could not download that link (${e.message}). For Dropbox, use a shared link to a single file.`, true);
 		throw e;
 	}
 	if (remember) { setLastLink(url); $('link-input').value = url; }
@@ -353,8 +417,8 @@ async function renderRecents() {
 		open.title = 'Open the saved copy';
 		const mb = (r.size / 1048576).toFixed(r.size < 10485760 ? 1 : 0);
 		const kind = { link: 'Link', dropbox: 'Dropbox', file: 'File' }[r.source.type] || 'File';
-		open.innerHTML = `<span class="recent-name"></span><span class="recent-meta">${kind} · ${mb} MB · ${ago(r.date)}</span>`;
-		open.querySelector('.recent-name').textContent = r.name;
+		const span = (cls, text) => { const e = document.createElement('span'); e.className = cls; e.textContent = text; return e; };
+		open.append(span('recent-name', r.name), span('recent-meta', `${kind} · ${mb} MB · ${ago(r.date)}`));
 		open.addEventListener('click', async () => {
 			const rec = await getRecent(r.id);
 			if (!rec) { setStatus('That saved copy is no longer available.', true); renderRecents(); return; }
@@ -399,7 +463,7 @@ function updateXRButtons() {
 	// Simple headset glyph, then the label.
 	b.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 7h16a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-4.2l-2.1-2.4a2.3 2.3 0 0 0-3.4 0L8.2 17H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2zm3.5 3a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5zm9 0a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5z"/></svg>';
 	b.append('Enter VR');
-	b.disabled = !current;
+	b.disabled = !current || loading > 0;
 	b.title = current ? '' : 'Open a model first';
 	b.addEventListener('click', async () => {
 		try {
@@ -458,13 +522,28 @@ $('collapse').addEventListener('click', () => {
 // ?model=<url> opens a model straight away (also used by the screenshot tests).
 const params = new URLSearchParams(location.search);
 const initial = params.get('model');
-const ready = initial ? loadUrl(initial, { remember: false }).then(() => true, () => false) : Promise.resolve(true);
-if (!initial) setStatus('Open a Sweet Home 3D file to start.');
+let ready = Promise.resolve(true);
+if (initial) {
+	// Only models on this site open by themselves. A link to somewhere else
+	// could have been put in the address by anyone, so it waits for a click.
+	const link = checkLink(initial, location.href);
+	if (link.ok && link.sameOrigin) {
+		ready = loadUrl(initial, { remember: false }).then(() => true, () => false);
+	} else if (link.ok) {
+		$('link-input').value = initial;
+		setStatus(`This page was opened with a link to a model on ${link.host}. Press “Open from link” if you trust it.`);
+	} else {
+		setStatus(link.error, true);
+	}
+} else {
+	setStatus('Open a Sweet Home 3D file to start.');
+}
 
 // Test hooks for scripts/screenshots.js
 window.__svr = {
 	lighting,
 	ready,
+	invalidate,
 	frame: (view) => { frame(view); controls.update(); renderer.render(scene, camera); },
 	look: (pos, target) => { camera.position.set(...pos); controls.target.set(...target); controls.update(); renderer.render(scene, camera); },
 	stats: () => ({ ...(current?.stats || {}), ...sceneStats(current?.root || new THREE.Group()), merged: current?.merged }),

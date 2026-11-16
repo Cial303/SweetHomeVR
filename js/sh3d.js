@@ -26,7 +26,8 @@ function decodeEntities(s) {
 	return s.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);/g, (m, e) => {
 		if (e[0] === '#') {
 			const code = e[1] === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
-			return String.fromCodePoint(code);
+			// An impossible character code stays as written instead of throwing.
+			return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m;
 		}
 		return ENTITIES[e] ?? m;
 	});
@@ -59,7 +60,12 @@ export function parseXml(text) {
 // Home.xml -> plain data
 // ---------------------------------------------------------------------------
 
-const num = (a, k, d = 0) => (a[k] !== undefined && a[k] !== '' ? parseFloat(a[k]) : d);
+// A number attribute, or the default when it is missing or not a finite
+// number (a damaged file must not put NaN or Infinity into the geometry).
+const num = (a, k, d = 0) => {
+	const v = a[k] !== undefined && a[k] !== '' ? parseFloat(a[k]) : d;
+	return Number.isFinite(v) ? v : d;
+};
 const bool = (a, k, d) => (a[k] === undefined ? d : a[k] === 'true');
 /** ARGB hex string ("FF808080") to 0xRRGGBB, or null. The alpha byte is ignored. */
 const color = (a, k) => (a[k] ? parseInt(a[k], 16) & 0xffffff : null);

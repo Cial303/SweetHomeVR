@@ -106,6 +106,18 @@ Resolve MTL and texture paths relative to the model's folder through a `LoadingM
 - **Anti-aliasing:** MSAA on the XR framebuffer (`antialias: true`). No post-process or temporal anti-aliasing: the user found that it flickered in SketchUp Viewer. Texture shimmer is reduced with mipmaps and 8× anisotropic filtering instead.
 - Show the triangle and draw-call count on the 2D page. If the model exceeds about 1.5 M triangles, warn but still load.
 
+## Safety (added in the pre-release audit)
+
+A model file and a pasted link are untrusted input: the viewer will be shared, and people will open files from forums.
+
+- **No outside requests from a model.** The loaders' URL modifier (`EntryStore`) serves only the file's own entries (`mem:`), embedded `data:` URIs and `blob:` URLs made from the file's bytes. Any other URL written in an MTL, glTF, COLLADA or 3DS file is replaced by a white pixel and counted; the status line reports how many were ignored.
+- **Archive limits.** Before unpacking, the declared sizes are summed: over 1 GB or 50,000 entries (including nested model archives, which share one budget) the file is refused with a clear message.
+- **Links.** `js/links.js`: only `https:` (or same-origin) links are downloaded, with a 500 MB cap, `credentials: 'omit'` and no referrer. `?model=` opens by itself only for a same-origin address; a link to another site is placed in the link field and waits for a click.
+- **Page.** Content Security Policy in `index.html` (`default-src 'none'`, scripts from `'self'` plus the import map's hash, connections to `https:` only), `referrer` set to `no-referrer`, and no HTML is ever built from file names or file content.
+- **Parser.** Number attributes that are missing, NaN or infinite fall back to their defaults; impossible character references are left as written.
+- **Memory.** Textures above `CONFIG.maxTextureSize` (2048) are shrunk after loading. Once the textures have loaded, the unpacked files and their blob URLs are freed.
+- Accepted limits: a hostile file can still make the tab slow or crash it (huge geometry, a slow regular expression in Home.xml, an image that decodes to a huge bitmap). GitHub Pages cannot send headers, so framing by another site cannot be forbidden (`frame-ancestors`).
+
 ## Experience and controls
 
 **2D page (home screen)**
@@ -172,5 +184,6 @@ README.md         how to host, use and update
   4. Dropbox and recents
   5. Performance pass and refinements. Requested by the user so far:
      - In the VR menu or controls card, a reminder of how to take a screenshot of the view (dollhouse, walk, VR or passthrough) with the Quest's own (Horizon OS) screenshot feature. Done: a footer on the controls card.
+  6. Pre-release audit (done): safety (see "Safety"), bugs, and performance: the 2D page redraws only when something changes (2 frames a second when idle), raycast target lists are cached per model, the lighting change check allocates nothing, and loading pauses between furniture models so progress is painted.
 - Keep the code plain and commented. No frameworks beyond three.js.
 - When unsure about a Sweet Home 3D detail, check the official source (`HomeXMLExporter`, `ModelManager`, `Wall3D`, `Room3D` in the Sweet Home 3D sources) rather than guessing.
