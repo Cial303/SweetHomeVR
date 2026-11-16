@@ -7,6 +7,7 @@
   "scripts": {
     "vendor": "node scripts/vendor.js",
     "fixtures": "node scripts/fetch-fixtures.js",
+    "example": "node scripts/make-example.js",
     "test": "node --import ./tests/register.js --test tests/*.test.js",
     "serve": "node scripts/serve.js",
     "shots": "node scripts/screenshots.js",

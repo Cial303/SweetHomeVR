@@ -11,12 +11,14 @@
 // costs one texture lookup per pixel, not a second render of the house.
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const TIMES = ['morning', 'noon', 'sunset', 'night'];
+export const DEFAULT_TIME = 'morning'; // on the page and in the headset, until the user picks another
 const DEG = Math.PI / 180;
 const SHADOW_SIZE = 2048;
 
-// Colours and strengths per time of day. Noon matches the original look.
+// Colours and strengths per time of day. Morning is the default.
 // sky/ground: hemisphere light; top/horizon: sky dome gradient (null = the home's sky colour).
 const PRESETS = {
 	morning: { hourAngle: -45 * DEG, sun: 0xffe7c8, sunI: 1.7, sky: 0xe6eefa, ground: 0xb2a898, hemiI: 2.0, top: 0x8db6e4, horizon: 0xf7eee0 },
@@ -72,12 +74,13 @@ export class Lighting {
 		scene.add(this.hemi, this.sun, this.sun.target);
 		renderer.shadowMap.type = THREE.PCFShadowMap;
 		renderer.shadowMap.autoUpdate = false; // rendered on demand: see fit()
-		this.time = 'noon';
+		this.time = DEFAULT_TIME;
 		this.shadows = false;
 		this.compass = null;
 		this.homeSky = 0xcce4fc;
 		this.subject = null; // { object, box }: what the sun follows and the shadow covers
 		this.onChange = null;
+		this.apply();
 	}
 
 	/** The home's compass and sky colour. */
@@ -85,6 +88,46 @@ export class Lighting {
 		this.compass = compass || null;
 		this.homeSky = skyColor ?? 0xcce4fc;
 		this.apply();
+	}
+
+	/**
+	 * Glowing bulbs for the home's light pieces (from sh3d.js: position and
+	 * radius in metres, storey). Returns a group to add to the model, or null.
+	 * Each storey gets two meshes: bright cores and soft additive halos. They
+	 * show at sunset and at night; no real light sources are added, which a
+	 * Quest 2 could not afford.
+	 */
+	setLamps(lamps) {
+		this.lamps = null;
+		if (!lamps?.length) return null;
+		const group = new THREE.Group();
+		group.name = 'lamps';
+		const core = new THREE.MeshBasicMaterial({ color: 0xfff3d6 });
+		const halo = new THREE.MeshBasicMaterial({ color: 0xffb968, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false });
+		for (const storey of new Set(lamps.map((l) => l.storey))) {
+			const mine = lamps.filter((l) => l.storey === storey);
+			const spheres = (scale, min) => mergeGeometries(mine.map((l) => {
+				const r = Math.max(l.radius * scale, min);
+				return new THREE.SphereGeometry(r, 14, 10).translate(l.position.x, l.position.y, l.position.z);
+			}));
+			for (const [geo, mat, order] of [[spheres(1, 0.02), core, 0], [spheres(4, 0.12), halo, 2]]) {
+				const m = new THREE.Mesh(geo, mat);
+				m.userData.storey = storey;
+				m.renderOrder = order;
+				group.add(m);
+			}
+		}
+		this.lamps = group;
+		this.showLamps();
+		return group;
+	}
+
+	showLamps() { if (this.lamps) this.lamps.visible = this.time === 'night' || this.time === 'sunset'; }
+
+	/** Something that casts shadows was shown or hidden: render the shadow map again. */
+	refresh() {
+		if (this._lastFit) this._lastFit.box = null;
+		this.fit();
 	}
 
 	/** What to light: an object and a box in its local space (the model bounds). */
@@ -122,6 +165,7 @@ export class Lighting {
 		this.hemi.intensity = p.hemiI * (this.shadows ? 0.9 : 1);
 		this.sun.color.set(p.sun);
 		this.sun.intensity = p.sunI * (this.shadows ? 1.6 : 1);
+		this.showLamps();
 		this.fit();
 		this.onChange?.();
 	}

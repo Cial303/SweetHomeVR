@@ -124,7 +124,7 @@ function setStatus(text, isError = false) {
 function sceneStats(root) {
 	let triangles = 0, drawCalls = 0;
 	root.traverse((o) => {
-		if (!o.isMesh || !o.visible) return;
+		if (!o.isMesh || !o.visible || o.parent?.name === 'lamps') return; // (lamp glows are not part of the model)
 		const g = o.geometry;
 		const count = g.index ? g.index.count : g.attributes.position.count;
 		triangles += count / 3;
@@ -200,7 +200,10 @@ async function load(files, label, source = { type: 'file' }) {
 		// More than one level (distinct elevations): walk mode lets you stand on
 		// anything, so stairs work. One level: you stay on the floor.
 		const elevations = new Set([...(result.home?.levels.values() ?? [])].filter((l) => l.viewable).map((l) => l.elevation));
-		xr.setModel({ group: current.root, layers: current.layers, bounds: current.bounds, observer: current.observer, skyColor: result.home?.skyColor, multiLevel: elevations.size > 1 });
+		// Bulbs of the home's lamps: they glow at sunset and at night.
+		const lamps = merged.stats ? lighting.setLamps(result.lamps) : lighting.setLamps(null);
+		if (lamps) current.root.add(lamps);
+		xr.setModel({ group: current.root, layers: current.layers, lamps, storeys: result.storeys ?? 1, bounds: current.bounds, observer: current.observer, skyColor: result.home?.skyColor, multiLevel: elevations.size > 1 });
 		prepareTextures(current.root);
 		lighting.setHome({ compass: result.home?.compass, skyColor: result.home?.skyColor });
 		lighting.setSubject(centerer, current.bounds);
@@ -503,6 +506,8 @@ $('file-input').addEventListener('change', async (ev) => {
 	load(files, picked.length === 1 ? picked[0].name : `${picked.length} files`, { type: 'file' }).catch(() => {});
 });
 
+// A small two-storey house made for this viewer (scripts/make-example.js).
+$('open-example').addEventListener('click', () => loadUrl('examples/example-home.sh3d', { remember: false }).catch(() => {}));
 $('open-link').addEventListener('click', () => {
 	const url = $('link-input').value;
 	if (url.trim()) loadUrl(url).catch(() => {});
@@ -518,6 +523,21 @@ $('collapse').addEventListener('click', () => {
 	const c = $('panel').classList.toggle('collapsed');
 	$('collapse').textContent = c ? '+' : '–';
 });
+
+// Offline use and clean updates (sw.js). Only on the real site (https), or
+// with ?sw while developing, so local tests always see the files on disk.
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || new URLSearchParams(location.search).has('sw'))) {
+	const firstVisit = !navigator.serviceWorker.controller;
+	navigator.serviceWorker.register('./sw.js').then(async () => {
+		const reg = await navigator.serviceWorker.ready;
+		// On the first visit the page loaded before the worker existed: tell it
+		// which files were used (and the example home), so they work offline.
+		if (firstVisit) {
+			const used = performance.getEntriesByType('resource').map((r) => r.name);
+			reg.active?.postMessage({ cache: [location.href, new URL('examples/example-home.sh3d', location.href).href, ...used] });
+		}
+	}).catch((e) => console.warn('Offline support is not available', e));
+}
 
 // ?model=<url> opens a model straight away (also used by the screenshot tests).
 const params = new URLSearchParams(location.search);

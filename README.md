@@ -4,14 +4,15 @@ A WebXR viewer for [Sweet Home 3D](https://www.sweethome3d.com/) homes on Meta Q
 
 It runs in the Meta Quest Browser: no app store, no developer mode, no sideloading. The same page works on a desktop browser as a 2D preview, so you can check a file before putting the headset on.
 
-> Status: **phase 3 of 5**: 2D preview, the VR/AR dollhouse, and walking through the home at 1:1. Final polish and performance work are next (see [SPEC.md](SPEC.md)).
+> Status: all planned phases are done (see [SPEC.md](SPEC.md)): 2D preview, the VR/AR dollhouse, walking at 1:1, time of day and shadows, and a safety audit. It works offline after the first visit.
 
 ## Using it
 
 1. Open the app's URL (GitHub Pages) in a browser.
-2. **Open from Dropbox** (browse your Dropbox and tap the file), **Open file**, or paste a link (e.g. a Dropbox shared link) and press **Open from link**. Then press **Enter VR** below. The model's details show at the top right.
-3. Drag to orbit, scroll or pinch to zoom, right-drag to pan.
-4. Next time, tap the model under **Recent**: the last 5 models are kept in the browser, so reopening one needs no download. For a model opened from a link, **↻** downloads the latest version from the same link (handy after editing the home on the Mac). The last link you used is also remembered in the link box.
+2. **Open file**, or paste a link (e.g. a Dropbox shared link) and press **Open from link**. No file to hand? **Try the example home**, a small two-storey house made for this viewer. Then press **Enter VR** below. The model's details show at the top right.
+3. Under **Display**, choose the **Light** (morning by default, noon, sunset or night) and switch **Shadows** on or off.
+4. Drag to orbit, scroll or pinch to zoom, right-drag to pan.
+5. Next time, tap the model under **Recent**: the last 5 models are kept in the browser, so reopening one needs no download. For a model opened from a link, **↻** downloads the latest version from the same link (handy after editing the home on the Mac). The last link you used is also remembered in the link box.
 
 **Tip for Dropbox links:** a Dropbox shared link stays the same when you overwrite the file with the same name. Save your home under a fixed name (e.g. `My home.sh3d`), share it once, and on the Quest you only ever type that link once; after that use **↻**.
 
@@ -39,7 +40,8 @@ Press **Enter VR** once a model is open. In the headset, the menu switches betwe
 - **Thumbstick** left/right rotates it; up/down zooms it (½× to 4×).
 - Point the **laser** at it: an orange figure shows where you'd stand. **Trigger** takes you there at real size.
 - **Grip** and move your hand to lift it or move it; it never sinks into the plinth.
-- Menu: **Walk in** (at Sweet Home 3D's virtual visitor position), **Recentre**, **Light** (morning, noon, sunset, night), **Shadows on/off**, **Ceilings on/off**, **View: VR / passthrough**, **Exit VR**.
+- A small grey **scale figure** (1.75 m at the model's scale) stands by the home's front corner, like the little people in architects' models, so you can judge its size.
+- Menu: **Walk in** (at Sweet Home 3D's virtual visitor position), **Recentre**, **Light** (morning, noon, sunset, night), **Shadows on/off**, **Ceilings on/off**, **Levels** (in a home with several storeys: show only the lower ones, with the ceilings off the top one shown), **Figure on/off**, **View: VR / passthrough**, **Exit VR**.
 
 **Inside, at 1:1**
 - **Left stick** walks where you look. Walls don't stop you. In a one-level home you stay on the floor and walk through furniture; in a home with several levels you can step onto anything, so stairs work.
@@ -49,7 +51,7 @@ Press **Enter VR** once a model is open. In the headset, the menu switches betwe
 - **B** or **Y** goes back to the dollhouse.
 - Menu: **Dollhouse**, **Ceilings on/off**, **Light**, **Shadows**, **Turn**, **Height** (yours, 1.4, 1.7 or 2.0 m), **View**, **Exit VR**.
 
-**Light and shadows:** the sun comes from the right direction for your home, using the compass in the Sweet Home 3D file. Shadows are off by default; when on, they are computed once (not every frame), so walking stays smooth. With ceilings on, sunlight only enters through the windows; turn ceilings off to let it in from above. The same Light and Shadows settings are under **Options** on the 2D page.
+**Light and shadows:** the sun comes from the right direction for your home, using the compass in the Sweet Home 3D file. Shadows are off by default; when on, they are computed once (not every frame), so walking stays smooth. With ceilings on, sunlight only enters through the windows; turn ceilings off to let it in from above. At sunset and at night the home's lamps glow. The same Light and Shadows settings are under **Display** on the 2D page; the light starts as morning.
 
 ## What gets shown from a Sweet Home 3D file
 
@@ -78,6 +80,7 @@ Without a key the button is simply hidden. The Chooser script is the only file l
 - **Links.** Only `https://` links are downloaded, up to 500 MB, without cookies or a referrer. A `?model=` address that points to another site is not opened automatically: it is put in the link box and waits for you to press **Open from link**.
 - **Oversized files.** Archives that would unpack to more than 1 GB or 50,000 files are refused before unpacking, and textures above 2048 pixels are shrunk to fit a Quest 2's memory. The limits are in `config.js` and `js/formats.js`.
 - **The page only runs its own code.** A Content Security Policy in `index.html` allows scripts from this site only, with the import map pinned by its hash. All libraries are vendored; nothing loads from a CDN. If you edit the import map, `npm test` tells you the new hash.
+- **Offline.** After the first visit the app's own files are kept by a service worker (`sw.js`), so the page opens without internet and your Recent models still load. Online, it always asks the server for the current files.
 - **What it cannot prevent.** A deliberately broken or enormous model can still make the browser tab slow or crash, as with any 3D viewer. It cannot reach your files, your account or other sites.
 
 ## Development
@@ -88,6 +91,7 @@ Requires Node 24 (`nvm use`). The app itself has no dependencies to install; `np
 npm install            # dev tools (Playwright) and the libraries to vendor
 npm run vendor         # copy three.js, three-mesh-bvh and fflate into vendor/
 npm run fixtures       # download the public Sweet Home 3D example homes
+npm run example        # rebuild examples/example-home.sh3d (only after editing scripts/make-example.js)
 npm test               # parser, lighting and safety tests (Node)
 npx playwright install chromium
 npm run shots          # screenshots of each fixture into test-output/
@@ -112,6 +116,8 @@ js/storage.js     recent models (IndexedDB)
 js/links.js       which links may be downloaded; Dropbox link rewrite (no DOM)
 js/sh3d.js        SH3D parser and scene builder (no DOM; Node-testable)
 js/formats.js     zip / OBJ / GLB / DAE / 3DS loading, unit detection
+sw.js             service worker: offline use, and no mix of old and new files after an update
+examples/         the generated example home (original content, made by scripts/make-example.js)
 vendor/           three.js, three-mesh-bvh, fflate (with licences)
 scripts/          vendoring, fixtures, local server, screenshots
 tests/            Node tests

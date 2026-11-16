@@ -14,7 +14,7 @@ const filter = process.argv[2] || '';
 const VIEWS = (process.env.VIEWS || 'top,se,sw,ne,nw').split(',');
 
 const fixtures = [];
-for (const dir of ['tests/fixtures', 'tests/fixtures/private']) {
+for (const dir of ['examples', 'tests/fixtures', 'tests/fixtures/private']) {
 	const abs = path.join(root, dir);
 	if (!fs.existsSync(abs)) continue;
 	for (const f of fs.readdirSync(abs)) if (/\.(sh3d|zip|obj|glb)$/i.test(f) && f.includes(filter)) fixtures.push(`${dir}/${f}`);

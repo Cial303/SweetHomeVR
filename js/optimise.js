@@ -4,7 +4,11 @@
 //    geometry that shares an equivalent material into one mesh
 //    (BufferGeometryUtils.mergeGeometries). Materials are deduplicated by
 //    type, colour, texture, opacity and side. A home with thousands of
-//    pieces ends up with one draw call per distinct material.
+//    pieces ends up with one draw call per distinct material (and per
+//    storey, so upper storeys can be hidden in the dollhouse).
+// 1b. Share identical vertices (same position, normal and uv) through an
+//    index: typically 25-60% fewer vertices for the GPU to transform and
+//    less memory, for a fraction of a second at load time.
 // 2. Build a three-mesh-bvh bounds tree on each merged mesh, so every
 //    raycast (laser pointer, floor marker, teleport, floor following) is fast.
 //
@@ -15,7 +19,7 @@
 //   ground   the ground plane around the home
 
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
@@ -23,6 +27,12 @@ THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 export const LAYERS = ['main', 'walls', 'floors', 'ceilings', 'ground'];
+
+/** The storey (0 = lowest) an object belongs to: set by the SH3D builder on the object or an ancestor. */
+function storeyOf(obj) {
+	for (let o = obj; o; o = o.parent) if (o.userData?.storey !== undefined) return o.userData.storey;
+	return 0;
+}
 
 /** Which layer an object of the loaded scene belongs to, from its top-level group name. */
 function layerOf(obj, root) {
@@ -96,6 +106,7 @@ export function optimiseModel(root) {
 		if (!o.isMesh || !o.geometry?.attributes?.position) return;
 		sourceMeshes++;
 		const layer = layerOf(o, root);
+		const storey = storeyOf(o);
 		const m = o.matrixWorld;
 		const mirrored = m.determinant() < 0;
 		const g0 = o.geometry;
@@ -112,9 +123,9 @@ export function optimiseModel(root) {
 			const g = extract(base, part.start, part.count, !!part.material.vertexColors);
 			g.applyMatrix4(m);
 			if (mirrored) flipWinding(g);
-			const key = `${layer}#${materialKey(part.material)}`;
+			const key = `${layer}#${storey}#${materialKey(part.material)}`;
 			let b = buckets.get(key);
-			if (!b) { b = { layer, material: part.material, geoms: [] }; buckets.set(key, b); }
+			if (!b) { b = { layer, storey, material: part.material, geoms: [] }; buckets.set(key, b); }
 			b.geoms.push(g);
 		}
 	});
@@ -129,15 +140,17 @@ export function optimiseModel(root) {
 	}
 	let triangles = 0, drawCalls = 0;
 	for (const b of buckets.values()) {
-		const merged = b.geoms.length === 1 ? b.geoms[0] : mergeGeometries(b.geoms, false);
-		if (!merged) continue;
+		const joined = b.geoms.length === 1 ? b.geoms[0] : mergeGeometries(b.geoms, false);
+		if (!joined) continue;
+		const merged = mergeVertices(joined);
 		merged.computeBoundingBox();
 		merged.computeBoundingSphere();
 		if (b.layer !== 'ceilings') merged.computeBoundsTree(); // ceilings are never raycast
 		const mesh = new THREE.Mesh(merged, b.material);
 		mesh.matrixAutoUpdate = false;
+		mesh.userData.storey = b.storey;
 		layers[b.layer].add(mesh);
-		triangles += merged.attributes.position.count / 3;
+		triangles += merged.index.count / 3;
 		drawCalls++;
 	}
 	return { group, layers, stats: { drawCalls, triangles: Math.round(triangles), materials: buckets.size, sourceMeshes } };

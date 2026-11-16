@@ -83,6 +83,22 @@
 		button.xr:hover { filter: brightness(1.1); border-color: var(--xr); }
 		button.xr svg { width: 26px; height: 26px; vertical-align: -7px; margin-right: 8px; }
 		details { margin-top: 10px; }
+		/* A titled group set apart from the file buttons above it. */
+		section.group { border-top: 1px solid var(--line); margin-top: 16px; }
+		.option { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; min-height: 38px; }
+		.option select { width: auto; min-width: 150px; }
+		.inline-label { flex: 0 0 auto; align-self: center; color: var(--muted); }
+		/* On/off switch (a checkbox underneath, so it works with keyboard and screen readers). */
+		.switch { cursor: pointer; }
+		.switch input { appearance: none; -webkit-appearance: none; flex: 0 0 auto; width: 46px; height: 26px; margin: 0; border-radius: 13px;
+			background: var(--line); position: relative; cursor: pointer; transition: background .15s; }
+		.switch input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+			background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); transition: transform .15s; }
+		.switch input:checked { background: var(--accent); }
+		.switch input:checked::after { transform: translateX(20px); }
+		.switch input:focus-visible { outline: 2px solid var(--xr); outline-offset: 2px; }
+		button.link { border: 0; padding: 4px 0; color: var(--muted); text-decoration: underline; font-size: 13px; }
+		button.link:hover { color: var(--accent); }
 		summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 		#recent { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 		#recent li { display: flex; gap: 6px; }
@@ -135,21 +151,12 @@
 			<button id="open-link">Open from link</button>
 		</div>
 		<p class="hint">.sh3d (Sweet Home 3D 5.3+), .zip, .obj (+ .mtl and textures), .glb</p>
+		<button id="open-example" class="link">No file to hand? Try the example home</button>
 
 		<details>
-			<summary>Options</summary>
+			<summary>File options</summary>
 			<div class="row">
-				<label for="time" style="flex:0 0 auto; align-self:center; color:var(--muted)">Light</label>
-				<select id="time">
-					<option value="morning">Morning</option>
-					<option value="noon">Noon</option>
-					<option value="sunset">Sunset</option>
-					<option value="night">Night</option>
-				</select>
-				<label style="flex:0 0 auto; align-self:center; color:var(--muted)"><input type="checkbox" id="shadows"> Shadows</label>
-			</div>
-			<div class="row">
-				<label for="units" style="flex:0 0 auto; align-self:center; color:var(--muted)">OBJ units</label>
+				<label for="units" class="inline-label">OBJ units</label>
 				<select id="units">
 					<option value="auto">Auto</option>
 					<option value="cm">cm</option>
@@ -162,8 +169,26 @@
 
 		<div id="status"></div>
 
+		<!-- How the model is shown: always visible, apart from the file buttons. -->
+		<section id="display-section" class="group">
+			<h2>Display</h2>
+			<div class="option">
+				<label for="time">Light</label>
+				<select id="time">
+					<option value="morning">Morning</option>
+					<option value="noon">Noon</option>
+					<option value="sunset">Sunset</option>
+					<option value="night">Night</option>
+				</select>
+			</div>
+			<label class="option switch">
+				<span>Shadows</span>
+				<input type="checkbox" role="switch" id="shadows">
+			</label>
+		</section>
+
 		<!-- Load first, then go into the headset. -->
-		<section id="xr-section">
+		<section id="xr-section" class="group">
 			<h2>View in headset</h2>
 			<div class="row" id="xr-buttons"></div>
 		</section>

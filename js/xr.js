@@ -49,7 +49,9 @@ const HEIGHTS = [0, 1.4, 1.7, 2.0]; // person height options, metres (0 = your o
 const EYE_BELOW_TOP = 0.11; // eyes are about this far below the top of the head
 const ORB_TOUCH = 0.08, ORB_RELEASE = 0.14; // touching an orb with the other hand
 const HINT = 'A / X, or an orb on your hands';
-const KEYS = { turn: 'svr.snapAngle', height: 'svr.height', view: 'svr.view' };
+const FIGURE_HEIGHT = 1.75; // the scale figure beside the dollhouse, metres at the model's scale
+const FIGURE_GAP = 0.45; // how far in front of the home it stands, metres at the model's scale
+const KEYS = { turn: 'svr.snapAngle', height: 'svr.height', view: 'svr.view', figure: 'svr.figure' };
 
 export class XRExperience {
 	/**
@@ -75,6 +77,8 @@ export class XRExperience {
 		this.snapAngle = TURNS.includes(turn) ? turn : 30;
 		const height = Number(safeGet(KEYS.height));
 		this.personHeight = HEIGHTS.includes(height) ? height : 0;
+		this.figureOn = safeGet(KEYS.figure) !== '0'; // scale figure beside the dollhouse
+		this.maxStorey = null; // dollhouse: highest storey shown (null = all)
 		this.menuShownOnce = false;
 		this.pendingRecentre = false;
 		this.raycaster = new THREE.Raycaster();
@@ -85,6 +89,7 @@ export class XRExperience {
 		this.buildShowroom();
 		this.buildWalkSky();
 		this.buildMarker();
+		this.figure = buildFigure();
 		this.buildMenus();
 		this.buildOrbs();
 		this.buildFade();
@@ -190,16 +195,18 @@ export class XRExperience {
 			dollhouse: new Panel([
 				{ id: 'walk', label: 'Walk in' },
 				{ id: 'recentre', label: 'Recentre' },
-				{ id: 'light', label: 'Light: noon' },
+				{ id: 'light', label: 'Light: morning' },
 				{ id: 'shadows', label: 'Shadows: off' },
 				{ id: 'ceilings', label: 'Ceilings: on' },
+				{ id: 'levels', label: 'Levels: all' },
+				{ id: 'figure', label: 'Figure: on' },
 				{ id: 'view', label: 'View: VR' },
 				{ id: 'exit', label: 'Exit VR', primary: true },
 			], opts('Dollhouse')),
 			walk: new Panel([
 				{ id: 'dollhouse', label: 'Dollhouse' },
 				{ id: 'ceilings', label: 'Ceilings: on' },
-				{ id: 'light', label: 'Light: noon' },
+				{ id: 'light', label: 'Light: morning' },
 				{ id: 'shadows', label: 'Shadows: off' },
 				{ id: 'turn', label: 'Turn: 30°' },
 				{ id: 'height', label: 'Height: yours' },
@@ -280,7 +287,13 @@ export class XRExperience {
 	setModel(model) {
 		this.model = model;
 		this._targets = null; // mesh sets for raycasts, rebuilt on demand
-		this.centerer.add(...this.markers);
+		this.maxStorey = null;
+		this.centerer.add(...this.markers, this.figure);
+		// The scale figure stands on the ground just in front of the home's
+		// left corner, at the model's scale, so it turns and zooms with it.
+		const b = model.bounds;
+		this.figure.position.set(b.min.x + 0.6, b.min.y, b.max.z + FIGURE_GAP);
+		this.figure.visible = false;
 		const size = model.bounds.getSize(new THREE.Vector3());
 		this.baseScale = DOLLHOUSE_SIZE / Math.max(size.x, size.z, 0.01);
 		this.buildPlinth(size.x * this.baseScale, size.z * this.baseScale);
@@ -367,6 +380,8 @@ export class XRExperience {
 		this.showroom.visible = false;
 		this.stage.visible = false;
 		for (const m of this.markers) m.visible = false;
+		this.figure.visible = false;
+		this.applyStoreys(); // the 2D page shows every storey
 		this.rig.position.set(0, 0, 0);
 		this.rig.rotation.set(0, 0, 0);
 		this.lift = 0;
@@ -392,6 +407,7 @@ export class XRExperience {
 	/** Shows the VR world or the passthrough for the current mode. */
 	applyView() {
 		const vr = this.vrView;
+		this.figure.visible = this.figureOn && this.mode === 'dollhouse';
 		if (this.mode === 'dollhouse') {
 			this.showroom.visible = vr;
 			this.gallery.visible = vr;
@@ -404,6 +420,27 @@ export class XRExperience {
 			this.walkSky.visible = vr;
 			this.model.layers.ground.visible = vr;
 		}
+	}
+
+	/**
+	 * Dollhouse level picker: shows the storeys up to `maxStorey` and takes the
+	 * ceilings off the highest one shown, so you look straight into it. Walk
+	 * mode and the 2D page always show every storey.
+	 */
+	applyStoreys() {
+		if (!this.model) return;
+		const count = this.model.storeys ?? 1;
+		const max = this.maxStorey;
+		const filtered = this.mode === 'dollhouse' && max !== null && max < count - 1;
+		const groups = [...Object.entries(this.model.layers), ['lamps', this.model.lamps]];
+		for (const [name, group] of groups) {
+			for (const m of group?.children ?? []) {
+				const s = m.userData.storey ?? 0;
+				m.visible = !filtered || s < max || (s === max && name !== 'ceilings');
+			}
+		}
+		this._targets = null; // hidden storeys cannot be pointed at
+		this.lighting?.refresh(); // and cast no shadows
 	}
 
 	/** Raises the rig by `lift` above the floor the user stands on. */
@@ -439,6 +476,9 @@ export class XRExperience {
 			}
 		}
 		this.menus.walk.setLabel('height', `Height: ${this.personHeight ? `${this.personHeight.toFixed(1)} m` : 'yours'}`);
+		const storeys = this.model?.storeys ?? 1;
+		this.menus.dollhouse.setLabel('levels', storeys < 2 ? 'Levels: one' : this.maxStorey === null ? 'Levels: all' : `Levels: ${this.maxStorey + 1} of ${storeys}`, storeys < 2);
+		this.menus.dollhouse.setLabel('figure', `Figure: ${this.figureOn ? 'on' : 'off'}`);
 	}
 
 	/** Opens this mode's menu in front of the head (yaw only, facing the eyes), a little to the left, with the controls card further left. */
@@ -570,6 +610,22 @@ export class XRExperience {
 				if (this.mode === 'walk') this.setLift(this.personLift());
 				this.updateLabels();
 				break;
+			case 'levels': {
+				// all -> lowest only -> lowest two -> ... -> all
+				const count = this.model.storeys ?? 1;
+				if (count < 2) break;
+				const next = this.maxStorey === null ? 0 : this.maxStorey + 1;
+				this.maxStorey = next >= count - 1 ? null : next;
+				this.applyStoreys();
+				this.updateLabels();
+				break;
+			}
+			case 'figure':
+				this.figureOn = !this.figureOn;
+				safeSet(KEYS.figure, this.figureOn ? '1' : '0');
+				this.applyView();
+				this.updateLabels();
+				break;
 			case 'light': this.lighting?.nextTime(); this.updateLabels(); break;
 			case 'shadows': this.lighting?.setShadows(!this.lighting.shadows); this.updateLabels(); break;
 			case 'recentre': this.closeMenu(); this.recentre(); break;
@@ -605,6 +661,7 @@ export class XRExperience {
 		this.stage.visible = true;
 		for (const c of this.input.controllers) this.input.setLaser(c, true);
 		this.applyView();
+		this.applyStoreys();
 		this.applyDollhouse();
 	}
 
@@ -645,13 +702,15 @@ export class XRExperience {
 	targets() {
 		// Built once per model: this is asked for several times every frame.
 		if (this._targets) return this._targets;
-		const L = this.model.layers;
-		const walls = L.walls?.children ?? [];
-		const anywhere = this.model.multiLevel || L.floors.children.length === 0;
-		const walkable = [...L.floors.children, ...L.ground.children, ...(anywhere ? L.main.children : [])];
+		// Only what is shown: storeys hidden by the level picker are left out.
+		const shown = (name) => (this.model.layers[name]?.children ?? []).filter((m) => m.visible);
+		const L = { main: shown('main'), walls: shown('walls'), floors: shown('floors'), ground: shown('ground') };
+		const walls = L.walls;
+		const anywhere = this.model.multiLevel || L.floors.length === 0;
+		const walkable = [...L.floors, ...L.ground, ...(anywhere ? L.main : [])];
 		this._targets = {
-			pointable: [...L.main.children, ...walls, ...L.floors.children],
-			floors: [...L.floors.children, ...L.ground.children],
+			pointable: [...L.main, ...walls, ...L.floors],
+			floors: [...L.floors, ...L.ground],
 			solid: [...walls, ...walkable],
 			walkable: new Set(walkable),
 			walkableList: walkable,
@@ -782,6 +841,7 @@ export class XRExperience {
 		this.stage.visible = false;
 		for (const c of this.input.controllers) { this.input.showHit(c, null); this.input.setLaser(c, false); c.pull = null; }
 		this.applyView();
+		this.applyStoreys();
 		this.setWalkTransform();
 		this.lift = this.personLift();
 		const target = this.centerer.localToWorld(modelPt.clone());
@@ -1135,6 +1195,34 @@ function buildGallery() {
 	canvas(1.3, 1.9, 3, -W / 2 + 0.03, 2.0, 0, Math.PI / 2);
 	canvas(1.3, 1.9, 4, W / 2 - 0.03, 2.0, 0, -Math.PI / 2);
 	return g;
+}
+
+/**
+ * Scale figure: a plain standing mannequin, 1.75 m tall, like the little
+ * people in architects' models. One merged mesh, so one draw call.
+ */
+function buildFigure() {
+	const H = FIGURE_HEIGHT / 1.735; // the parts below add up to 1.735
+	const parts = [];
+	const add = (geo, x, y, z, rz = 0, sz = 1) => parts.push(geo.scale(1, 1, sz).rotateZ(rz).translate(x, y, z));
+	add(new THREE.SphereGeometry(0.105, 16, 12), 0, 1.63, 0); // head
+	add(new THREE.CylinderGeometry(0.045, 0.05, 0.1, 10), 0, 1.5, 0); // neck
+	add(new THREE.CylinderGeometry(0.19, 0.145, 0.52, 14), 0, 1.2, 0, 0, 0.6); // torso
+	add(new THREE.CylinderGeometry(0.15, 0.16, 0.18, 14), 0, 0.87, 0, 0, 0.65); // hips
+	for (const s of [-1, 1]) {
+		add(new THREE.SphereGeometry(0.062, 10, 8), s * 0.2, 1.42, 0); // shoulder
+		add(new THREE.CylinderGeometry(0.048, 0.034, 0.62, 10), s * 0.235, 1.12, 0, s * 0.07); // arm
+		add(new THREE.CylinderGeometry(0.078, 0.05, 0.8, 10), s * 0.085, 0.4, 0); // leg
+		add(new THREE.BoxGeometry(0.09, 0.06, 0.24), s * 0.085, 0.03, 0.045); // foot
+	}
+	const geo = mergeGeometries(parts.map((g) => g.toNonIndexed()));
+	for (const g of parts) g.dispose();
+	geo.scale(H, H, H);
+	const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0x5b6672 }));
+	mesh.name = 'scale-figure';
+	mesh.castShadow = mesh.receiveShadow = true;
+	mesh.visible = false;
+	return mesh;
 }
 
 /** Dark oak planks, drawn once on a canvas (2 m tile, 25 cm planks). */

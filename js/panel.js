@@ -14,6 +14,7 @@ const COLOURS = {
 	button: '#ffffff', buttonEdge: '#d3d9df', text: '#1d2329',
 	hover: '#e3edfb', hoverEdge: '#3d6fd8',
 	primary: '#e07a1f', primaryHover: '#b85f12', primaryText: '#ffffff',
+	off: '#e2e6ea', offText: '#9aa3ac',
 };
 
 export class Panel {
@@ -87,6 +88,9 @@ export class Panel {
 			if (r.primary) {
 				ctx.fillStyle = hot ? COLOURS.primaryHover : COLOURS.primary;
 				ctx.fill();
+			} else if (it.disabled) {
+				ctx.fillStyle = COLOURS.off; // nothing to choose here (e.g. Levels in a one-storey home)
+				ctx.fill();
 			} else {
 				ctx.fillStyle = hot ? COLOURS.hover : COLOURS.button;
 				ctx.fill();
@@ -94,7 +98,7 @@ export class Panel {
 				ctx.strokeStyle = hot ? COLOURS.hoverEdge : COLOURS.buttonEdge;
 				ctx.stroke();
 			}
-			ctx.fillStyle = r.primary ? COLOURS.primaryText : COLOURS.text;
+			ctx.fillStyle = r.primary ? COLOURS.primaryText : it.disabled ? COLOURS.offText : COLOURS.text;
 			let px = r.primary ? 48 : 40; // shrink long labels to fit
 			do ctx.font = `${r.primary ? 600 : 500} ${px}px ${FONT}`;
 			while (ctx.measureText(it.label).width > r.w - 32 && --px > 24);
@@ -119,7 +123,7 @@ export class Panel {
 		if (!uv) return null;
 		const x = uv.x * this.size.w, y = (1 - uv.y) * this.size.h;
 		const r = this.rects().find((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
-		return r ? r.id : null;
+		return r && !this.items.find((i) => i.id === r.id).disabled ? r.id : null;
 	}
 
 	setHover(id) {
@@ -128,9 +132,10 @@ export class Panel {
 		this.draw();
 	}
 
-	setLabel(id, label) {
+	/** Changes a button's text and, optionally, whether it can be pressed. */
+	setLabel(id, label, disabled = false) {
 		const it = this.items.find((i) => i.id === id);
-		if (it && it.label !== label) { it.label = label; this.draw(); }
+		if (it && (it.label !== label || !!it.disabled !== disabled)) { it.label = label; it.disabled = disabled; this.draw(); }
 	}
 }
 

@@ -63,7 +63,8 @@ const state = () => page.evaluate(() => {
 		hover: x.menu?.hover ?? null, anchorScale: x.anchor.scale.x, orbs: x.orbs.filter((o) => o.holder).length,
 		orbGlow: Math.max(...x.orbs.map((o) => o.glow)), snap: x.snapAngle, height: x.personHeight,
 		arc: x.arc.dots.visible, ring: x.arc.ring.visible ? x.arc.ring.position.toArray() : null, valid: x.tele?.result?.valid ?? null,
-		stage: [...x.stage.position.toArray(), x.stage.rotation.y] };
+		stage: [...x.stage.position.toArray(), x.stage.rotation.y],
+		figure: x.figure.visible, figureHeight: x.figure.visible ? new (x.rig.position.constructor)().setFromMatrixScale(x.figure.matrixWorld).y * 1.75 : 0 };
 });
 /** World position of a button's centre on the open menu. */
 const menuPoint = (id) => page.evaluate(async (id) => {
@@ -113,6 +114,7 @@ let s = await state();
 check('enters the VR dollhouse', s.presenting && s.mode === 'dollhouse' && s.showroom, JSON.stringify({ mode: s.mode, session: s.session }));
 check('eyes lifted in the dollhouse', Math.abs(s.rig[1] - 0.25) < 1e-6, `rig y ${s.rig[1]}`);
 check('an orb on each hand', s.orbs === 2);
+check('scale figure stands by the dollhouse at the model\'s scale', s.figure && Math.abs(s.figureHeight - 1.75 * s.anchorScale) < 1e-3, `figure ${s.figureHeight.toFixed(3)} m, scale ${s.anchorScale.toFixed(3)}`);
 check('menu opens once on entry', s.menu === 'dollhouse');
 await shot('dollhouse-menu');
 await click('right', 'b-button');
@@ -384,6 +386,59 @@ check('re-entering puts the plinth in front of you', Math.abs(s.stage[0] - 1.2) 
 	`stage ${s.stage.map((v) => v.toFixed(2))}`);
 check('menu does not reopen on re-entry', s.menu === null);
 await shot('reentered');
+await page.evaluate(() => window.__svr.xr.end());
+await frames(5);
+
+// The example home (two storeys, lamps): level picker, lamps at night, figure.
+await page.click('#open-example');
+await page.waitForFunction(() => /Loaded example-home/.test(document.getElementById('status').textContent), null, { timeout: 20000 });
+await page.evaluate(() => window.__device.position.set(0, 1.6, 0));
+await lookDown();
+await restRight();
+await restLeft();
+await enterVR.click();
+await page.waitForFunction(() => { const x = window.__svr.xr; return x.mode && !x.pendingRecentre && x.orbs.every((o) => o.holder); }, null, { timeout: 8000 }).catch(() => {});
+await frames(10);
+const storeys = () => page.evaluate(() => {
+	const x = window.__svr.xr, shown = new Set(), hidden = new Set();
+	for (const g of [...Object.values(x.model.layers), x.model.lamps]) for (const m of g?.children ?? []) (m.visible ? shown : hidden).add(m.userData.storey ?? 0);
+	const topCeilings = x.model.layers.ceilings.children.filter((m) => m.visible).map((m) => m.userData.storey);
+	return { count: x.model.storeys, shown: [...shown].sort(), hidden: [...hidden].sort(), topCeilings, label: x.menus.dollhouse.items.find((i) => i.id === 'levels').label,
+		pointable: x.targets().pointable.every((m) => m.visible), lamps: x.model.lamps?.children.length ?? 0, lampsOn: !!x.model.lamps?.visible, multi: x.model.multiLevel };
+});
+let lv = await storeys();
+check('example home: two storeys, all shown', lv.count === 2 && lv.multi && lv.hidden.length === 0 && lv.label === 'Levels: all', JSON.stringify(lv));
+await click('right', 'a-button');
+await shot('example-menu');
+await clickMenu('levels');
+await frames(5);
+lv = await storeys();
+check('Levels shows the ground floor only, without its ceilings', lv.shown.join() === '0' && lv.hidden.includes(1) && lv.topCeilings.length === 0 && lv.label === 'Levels: 1 of 2' && lv.pointable, JSON.stringify(lv));
+await page.evaluate(() => window.__svr.lighting.setTime('night'));
+await frames(5);
+lv = await storeys();
+check('lamps glow at night', lv.lamps > 0 && lv.lampsOn, JSON.stringify(lv));
+await click('right', 'b-button');
+await shot('example-ground-floor-night');
+await page.evaluate(() => window.__svr.lighting.setTime('morning'));
+await click('right', 'a-button');
+await clickMenu('levels');
+await frames(5);
+lv = await storeys();
+check('Levels cycles back to all', lv.hidden.length === 0 && lv.label === 'Levels: all' && !lv.lampsOn, JSON.stringify(lv));
+await clickMenu('figure');
+await frames(3);
+check('Figure can be switched off', !(await state()).figure);
+await clickMenu('figure');
+await frames(3);
+check('and on again', (await state()).figure);
+await clickMenu('levels'); // ground floor only, then walk in: every storey comes back
+await clickMenu('walk');
+await frames(15);
+lv = await storeys();
+s = await state();
+check('walking shows every storey and hides the figure', s.mode === 'walk' && lv.hidden.length === 0 && !s.figure, JSON.stringify({ mode: s.mode, hidden: lv.hidden, figure: s.figure }));
+await shot('example-walk');
 await page.evaluate(() => window.__svr.xr.end());
 await frames(5);
 

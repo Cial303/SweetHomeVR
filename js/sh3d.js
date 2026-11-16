@@ -122,6 +122,9 @@ export function parseHome(xmlText) {
 		if (!lowest || l.elevation < lowest.elevation || (l.elevation === lowest.elevation && l.elevationIndex < lowest.elevationIndex)) lowest = l;
 	}
 	home.lowestLevelId = lowest ? lowest.id : null;
+	// Storeys: the distinct elevations of the viewable levels, lowest first.
+	// (Sweet Home 3D allows several levels at one elevation; they are one storey.)
+	home.storeys = [...new Set([...home.levels.values()].filter((l) => l.viewable).map((l) => l.elevation))].sort((a, b) => a - b);
 
 	const levelOf = (id) => (id ? home.levels.get(id) || null : null);
 	const levelHidden = (id) => { const l = levelOf(id); return l ? !l.viewable : false; };
@@ -159,6 +162,12 @@ export function parseHome(xmlText) {
 			// Door/window wall cut-out, as fractions of the piece size
 			wallLeft: num(a, 'wallLeft', 0), wallWidth: num(a, 'wallWidth', 1),
 			wallTop: num(a, 'wallTop', 0), wallHeight: num(a, 'wallHeight', 1),
+			// Lights: where the bulbs are, as fractions of the piece size
+			// (diameter is a fraction of the width, or null for the default).
+			lightSources: n.name === 'light' ? n.children.filter((c) => c.name === 'lightSource').map((c) => ({
+				x: num(c.attrs, 'x', 0.5), y: num(c.attrs, 'y', 0.5), z: num(c.attrs, 'z', 0.5),
+				diameter: c.attrs.diameter !== undefined ? num(c.attrs, 'diameter', 0) || null : null,
+			})) : [],
 		};
 	};
 
@@ -234,9 +243,11 @@ function readCamera(a) {
 class Buckets {
 	constructor() { this.map = new Map(); }
 
-	get(key, makeMaterial) {
-		let b = this.map.get(key);
-		if (!b) { b = { material: makeMaterial(), pos: [], nrm: [], uv: [] }; this.map.set(key, b); }
+	/** One bucket per storey and material key, so storeys can be shown and hidden. */
+	get(key, makeMaterial, storey = 0) {
+		const k = `${storey}|${key}`;
+		let b = this.map.get(k);
+		if (!b) { b = { material: makeMaterial(), storey, pos: [], nrm: [], uv: [] }; this.map.set(k, b); }
 		return b;
 	}
 
@@ -269,6 +280,7 @@ class Buckets {
 			geo.setAttribute('uv', new THREE.Float32BufferAttribute(b.uv, 2));
 			const mesh = new THREE.Mesh(geo, b.material);
 			mesh.name = `${name}:${key}`;
+			mesh.userData.storey = b.storey;
 			g.add(mesh);
 		}
 		return g;
@@ -321,6 +333,9 @@ export async function buildHome(home, opts = {}) {
 	const root = new THREE.Group();
 	root.name = 'sh3d-home';
 	const levelElevation = (id) => home.levels.get(id)?.elevation ?? 0;
+	// Which storey (0 = lowest) an item on a level belongs to.
+	const storeys = home.storeys?.length ? home.storeys : [0];
+	const storeyOf = (id) => Math.max(0, storeys.indexOf(levelElevation(id)));
 
 	// Furniture first: door/window placement feeds the wall openings.
 	const furniture = new THREE.Group();
@@ -331,14 +346,33 @@ export async function buildHome(home, opts = {}) {
 	let done = 0;
 	for (const piece of home.pieces) {
 		const obj = await buildPiece(piece, { home, loadModel, getTexture, modelCache, normCache, levelElevation });
+		obj.object.userData.storey = storeyOf(piece.levelId);
 		furniture.add(obj.object);
 		placed.push({ piece, effHeight: obj.effHeight });
 		opts.onProgress?.(++done, home.pieces.length);
 	}
 
 	const doors = placed.filter((p) => p.piece.kind === 'door');
-	const wallsGroup = buildWalls(home, doors, getTexture, levelElevation);
-	const { floors, ceilings } = buildRooms(home, getTexture, levelElevation);
+	const wallsGroup = buildWalls(home, doors, getTexture, levelElevation, storeyOf);
+	const { floors, ceilings } = buildRooms(home, getTexture, levelElevation, storeyOf);
+
+	// Bulbs of the light pieces, in metres: drawn as glowing lamps at night.
+	// Position as in Sweet Home 3D's PhotoRenderer: fractions of the piece's
+	// width, depth and height, turned by the piece's angle.
+	const lamps = [];
+	for (const { piece: p } of placed) {
+		for (const s of p.lightSources || []) {
+			let xl = -p.width / 2 + s.x * p.width;
+			const yl = p.depth / 2 - s.y * p.depth;
+			if (p.mirrored) xl = -xl;
+			const cos = Math.cos(p.angle), sin = Math.sin(p.angle);
+			lamps.push({
+				position: new THREE.Vector3(p.x + xl * cos - yl * sin, levelElevation(p.levelId) + p.elevation + s.z * p.height, p.y + xl * sin + yl * cos).multiplyScalar(0.01),
+				radius: (s.diameter ? s.diameter * p.width / 2 : 3.25) * 0.01,
+				storey: storeyOf(p.levelId),
+			});
+		}
+	}
 
 	root.add(wallsGroup.group, floors, ceilings, furniture);
 
@@ -362,6 +396,8 @@ export async function buildHome(home, opts = {}) {
 		root,
 		bounds: bounds.clone().applyMatrix4(new THREE.Matrix4().makeScale(0.01, 0.01, 0.01)),
 		observer: home.observer,
+		lamps,
+		storeys: storeys.length,
 		stats: {
 			walls: home.walls.length,
 			rooms: home.rooms.length,
@@ -369,6 +405,7 @@ export async function buildHome(home, opts = {}) {
 			doorsAndWindows: doors.length,
 			openings: wallsGroup.openings,
 			levels: home.levels.size,
+			lamps: lamps.length,
 			missingModels: [...modelCache.values()].filter((v) => v === null).length,
 		},
 	};
@@ -594,7 +631,7 @@ function wallSegments(w) {
 	return segs;
 }
 
-function buildWalls(home, doors, getTexture, levelElevation) {
+function buildWalls(home, doors, getTexture, levelElevation, storeyOf = () => 0) {
 	const buckets = new Buckets();
 	let openingCount = 0;
 
@@ -606,6 +643,7 @@ function buildWalls(home, doors, getTexture, levelElevation) {
 		const h1 = w.heightAtEnd ?? h0;
 		const segs = wallSegments(w);
 		const totalLen = segs.reduce((s, g) => s + g.len, 0) || 1;
+		const storey = storeyOf(w.levelId);
 		const topAt = (uGlobal) => lvlElev + h0 + (h1 - h0) * Math.min(1, Math.max(0, uGlobal / totalLen));
 
 		// Materials per side
@@ -613,16 +651,16 @@ function buildWalls(home, doors, getTexture, levelElevation) {
 			const map = getTexture(tex);
 			if (map) {
 				const key = `tex:${tex.image}`;
-				return { bucket: buckets.get(key, () => surfaceMaterial(0xffffff, map)), tw: tex.width || 100, th: tex.height || 100 };
+				return { bucket: buckets.get(key, () => surfaceMaterial(0xffffff, map), storey), tw: tex.width || 100, th: tex.height || 100 };
 			}
 			const c = col ?? DEFAULT_WALL_COLOR;
-			return { bucket: buckets.get(`col:${c}`, () => surfaceMaterial(c)), tw: 100, th: 100 };
+			return { bucket: buckets.get(`col:${c}`, () => surfaceMaterial(c), storey), tw: 100, th: 100 };
 		};
 		const sides = [
 			{ s: +1, mat: sideMat(w.leftColor, w.leftTexture) },
 			{ s: -1, mat: sideMat(w.rightColor, w.rightTexture) },
 		];
-		const topBucket = w.topColor !== null ? buckets.get(`col:${w.topColor}`, () => surfaceMaterial(w.topColor)) : null;
+		const topBucket = w.topColor !== null ? buckets.get(`col:${w.topColor}`, () => surfaceMaterial(w.topColor), storey) : null;
 
 		for (const seg of segs) {
 			if (seg.len < 0.01) continue;
@@ -727,7 +765,7 @@ function buildWalls(home, doors, getTexture, levelElevation) {
 // Rooms: floors (facing up) and ceilings (facing down)
 // ---------------------------------------------------------------------------
 
-function buildRooms(home, getTexture, levelElevation) {
+function buildRooms(home, getTexture, levelElevation, storeyOf = () => 0) {
 	const floorB = new Buckets();
 	const ceilB = new Buckets();
 	for (const room of home.rooms) {
@@ -745,9 +783,10 @@ function buildRooms(home, getTexture, levelElevation) {
 		const add = (buckets, y, col, defCol, tex, hint, prefix) => {
 			const map = getTexture(tex);
 			const tw = map ? tex.width || 100 : 100, th = map ? tex.height || 100 : 100;
+			const storey = storeyOf(room.levelId);
 			const b = map
-				? buckets.get(`tex:${tex.image}`, () => surfaceMaterial(0xffffff, map))
-				: buckets.get(`${prefix}:${col ?? defCol}`, () => surfaceMaterial(col ?? defCol));
+				? buckets.get(`tex:${tex.image}`, () => surfaceMaterial(0xffffff, map), storey)
+				: buckets.get(`${prefix}:${col ?? defCol}`, () => surfaceMaterial(col ?? defCol), storey);
 			for (const [i, j, k] of tris) {
 				const v = [pts[i], pts[j], pts[k]];
 				buckets.tri(b, ...v.map((p) => new THREE.Vector3(p.x, y, p.y)), ...v.map((p) => [p.x / tw, -p.y / th]), hint);
