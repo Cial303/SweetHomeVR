@@ -50,7 +50,9 @@ controls.addEventListener('change', invalidate);
 
 // One hemisphere light and one sun; time of day and optional shadows (lighting.js).
 const lighting = new Lighting(scene, renderer);
-const LIGHT_KEYS = { time: 'svr.time', shadows: 'svr.shadows' };
+// (The light used to be saved as 'svr.time' on every visit, chosen or not.
+// A new key lets everyone start from the morning default once.)
+const LIGHT_KEYS = { time: 'svr.light', shadows: 'svr.shadows' };
 const savedTime = safeGet(LIGHT_KEYS.time);
 if (TIMES.includes(savedTime)) lighting.setTime(savedTime);
 if (safeGet(LIGHT_KEYS.shadows) === '1') lighting.setShadows(true);
