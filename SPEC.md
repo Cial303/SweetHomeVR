@@ -21,7 +21,7 @@ Out of scope: editing, collaboration, accounts, measurements and scenes (possibl
 
 1. **Primary: Dropbox.** I save the .sh3d into Dropbox on the Mac.
    - **"Open from Dropbox" button** using the official **Dropbox Chooser** with `linkType: "direct"`. Direct links are CORS-enabled, so the app can `fetch()` them. The app key goes in `config.js`; walk me through registering a Dropbox app and adding the GitHub Pages domain.
-   - **"Open from link"** field for pasted Dropbox shared links. Rewrite `www.dropbox.com` to `dl.dropboxusercontent.com` and force `dl=1`, keeping `rlkey`. This workaround is unofficial, so handle failure gracefully.
+   - **"Open from link"** field for pasted Dropbox shared links. Rewrite `www.dropbox.com` to `dl.dropboxusercontent.com` and force `dl=1`, keeping `rlkey`. This workaround is unofficial, so handle failure gracefully. Checked on the Quest 2: a Dropbox link pasted from WhatsApp opens fine, so the Chooser stays optional (hidden while `config.js` has no app key).
 2. **Fallback: device file picker** (`<input type="file">`) for files already in the Quest's Downloads folder (e.g. downloaded from dropbox.com in the Quest Browser).
    - **Known Quest Browser bug:** files with uncommon extensions picked through `<input type=file>` can fail with `ERR_ACCESS_DENIED` when read through a blob URL. Read the file with `await file.arrayBuffer()` straight away and never create a blob URL from the picked `File`. If reading still fails, show: "Quest Browser blocked this file type. Rename it to .zip and try again". Accept `.zip` everywhere `.sh3d` is accepted, since a .sh3d is a zip.
    - Don't set a restrictive `accept` attribute.
@@ -112,7 +112,7 @@ Resolve MTL and texture paths relative to the model's folder through a `LoadingM
 - Title: "Sweet Home VR".
 - Buttons: Open from Dropbox, Open from link, Open file, plus the Recent list.
 - Live orbit preview of the dollhouse.
-- One **Enter VR** button, shown only if `navigator.xr.isSessionSupported` says so (changed at the user's request from separate VR and AR buttons). When `immersive-ar` is supported the session is an AR session and the in-headset menu switches between the VR view (an opaque world drawn over the passthrough) and the passthrough view (greyscale on Quest 2); otherwise it is an `immersive-vr` session, VR only.
+- One **Enter VR** button, shown only if `navigator.xr.isSessionSupported` says so (changed at the user's request from separate VR and AR buttons). When `immersive-ar` is supported the session is an AR session and the in-headset menu switches between the VR view (an opaque world drawn over the passthrough) and the passthrough view (greyscale on Quest 2); otherwise it is an `immersive-vr` session, VR only. Checked on the Quest 2: the Guardian boundary still appears in the VR view of an AR session.
 - Use `local-floor` reference space.
 
 **XR dollhouse mode** (on entering XR, like SketchUp Viewer's tabletop view)
