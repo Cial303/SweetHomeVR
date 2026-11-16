@@ -194,7 +194,7 @@ export class XRExperience {
 				{ id: 'shadows', label: 'Shadows: off' },
 				{ id: 'ceilings', label: 'Ceilings: on' },
 				{ id: 'view', label: 'View: VR' },
-				{ id: 'exit', label: 'Exit VR' },
+				{ id: 'exit', label: 'Exit VR', primary: true },
 			], opts('Dollhouse')),
 			walk: new Panel([
 				{ id: 'dollhouse', label: 'Dollhouse' },
@@ -204,7 +204,7 @@ export class XRExperience {
 				{ id: 'turn', label: 'Turn: 30°' },
 				{ id: 'height', label: 'Height: yours' },
 				{ id: 'view', label: 'View: VR' },
-				{ id: 'exit', label: 'Exit VR' },
+				{ id: 'exit', label: 'Exit VR', primary: true },
 			], opts('Walking')),
 		};
 		const either = (btn) => [

@@ -1,15 +1,24 @@
 // Floating VR menu drawn on a canvas texture and clicked with the controller
-// laser. Buttons are stacked vertically; hitTest() maps a ray hit (UV) to a
-// button id.
+// laser. Buttons sit in a grid of white buttons; a "primary" item (Exit) gets
+// its own full-width, taller, orange row at the bottom. hitTest() maps a ray
+// hit (UV) to a button id.
 
 import * as THREE from 'three';
 
 const PX_PER_M = 1024; // canvas pixels per metre of panel
 const PAD = 24, GAP = 16, BTN_H = 96, TITLE_H = 72, HINT_H = 56;
+const PRIMARY_H = 124, PRIMARY_GAP = 32; // the primary button: taller, set apart
+const FONT = '-apple-system, "Segoe UI", Roboto, sans-serif';
+const COLOURS = {
+	panel: 'rgba(233,237,241,0.95)',
+	button: '#ffffff', buttonEdge: '#d3d9df', text: '#1d2329',
+	hover: '#e3edfb', hoverEdge: '#3d6fd8',
+	primary: '#e07a1f', primaryHover: '#b85f12', primaryText: '#ffffff',
+};
 
 export class Panel {
 	/**
-	 * @param items  [{ id, label }]
+	 * @param items  [{ id, label, primary }] (primary: full-width orange button at the bottom)
 	 * @param opts   { title, hint (small text under the buttons), width (m), pxPerM (canvas pixels per metre), columns }
 	 */
 	constructor(items, { title = '', hint = '', width = 0.36, pxPerM = PX_PER_M, columns = 1 } = {}) {
@@ -19,8 +28,10 @@ export class Panel {
 		this.hint = hint;
 		this.hover = null;
 		const wPx = Math.round(width * pxPerM);
-		const rows = Math.ceil(items.length / columns);
-		const hPx = PAD * 2 + (title ? TITLE_H : 0) + rows * BTN_H + (rows - 1) * GAP + (hint ? HINT_H : 0);
+		const nPrimary = items.filter((i) => i.primary).length;
+		const rows = Math.ceil((items.length - nPrimary) / columns);
+		const hPx = PAD * 2 + (title ? TITLE_H : 0) + rows * BTN_H + Math.max(0, rows - 1) * GAP
+			+ nPrimary * (PRIMARY_GAP + PRIMARY_H) + (hint ? HINT_H : 0);
 		this.canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
 		if (this.canvas) { this.canvas.width = wPx; this.canvas.height = hPx; }
 		this.texture = this.canvas ? new THREE.CanvasTexture(this.canvas) : null;
@@ -38,10 +49,21 @@ export class Panel {
 	rects() {
 		const top = PAD + (this.title ? TITLE_H : 0);
 		const c = this.columns;
-		const w = (this.size.w - 2 * PAD - (c - 1) * GAP) / c;
-		return this.items.map((it, i) => ({
+		const full = this.size.w - 2 * PAD;
+		const w = (full - (c - 1) * GAP) / c;
+		const out = [];
+		const normal = this.items.filter((it) => !it.primary);
+		normal.forEach((it, i) => out.push({
 			id: it.id, x: PAD + (i % c) * (w + GAP), y: top + Math.floor(i / c) * (BTN_H + GAP), w, h: BTN_H,
 		}));
+		const rows = Math.ceil(normal.length / c);
+		let y = top + rows * BTN_H + Math.max(0, rows - 1) * GAP;
+		for (const it of this.items.filter((i) => i.primary)) {
+			y += PRIMARY_GAP;
+			out.push({ id: it.id, x: PAD, y, w: full, h: PRIMARY_H, primary: true });
+			y += PRIMARY_H;
+		}
+		return out;
 	}
 
 	draw() {
@@ -50,23 +72,31 @@ export class Panel {
 		const { w, h } = this.size;
 		ctx.clearRect(0, 0, w, h);
 		roundRect(ctx, 0, 0, w, h, 36);
-		ctx.fillStyle = 'rgba(255,255,255,0.94)';
+		ctx.fillStyle = COLOURS.panel;
 		ctx.fill();
 		ctx.textBaseline = 'middle';
 		if (this.title) {
-			ctx.fillStyle = '#1d2329';
-			ctx.font = '600 40px -apple-system, "Segoe UI", Roboto, sans-serif';
+			ctx.fillStyle = COLOURS.text;
+			ctx.font = `600 40px ${FONT}`;
 			ctx.fillText(this.title, PAD + 8, PAD + TITLE_H / 2 - 4);
 		}
 		for (const r of this.rects()) {
 			const it = this.items.find((i) => i.id === r.id);
 			const hot = this.hover === r.id;
 			roundRect(ctx, r.x, r.y, r.w, r.h, 20);
-			ctx.fillStyle = hot ? '#d9822b' : '#eef1f4';
-			ctx.fill();
-			ctx.fillStyle = hot ? '#ffffff' : '#1d2329';
-			let px = 40; // shrink long labels to fit
-			do ctx.font = `500 ${px}px -apple-system, "Segoe UI", Roboto, sans-serif`;
+			if (r.primary) {
+				ctx.fillStyle = hot ? COLOURS.primaryHover : COLOURS.primary;
+				ctx.fill();
+			} else {
+				ctx.fillStyle = hot ? COLOURS.hover : COLOURS.button;
+				ctx.fill();
+				ctx.lineWidth = hot ? 5 : 2;
+				ctx.strokeStyle = hot ? COLOURS.hoverEdge : COLOURS.buttonEdge;
+				ctx.stroke();
+			}
+			ctx.fillStyle = r.primary ? COLOURS.primaryText : COLOURS.text;
+			let px = r.primary ? 48 : 40; // shrink long labels to fit
+			do ctx.font = `${r.primary ? 600 : 500} ${px}px ${FONT}`;
 			while (ctx.measureText(it.label).width > r.w - 32 && --px > 24);
 			ctx.textAlign = 'center';
 			ctx.fillText(it.label, r.x + r.w / 2, r.y + r.h / 2 + 2);
@@ -75,7 +105,7 @@ export class Panel {
 		if (this.hint) {
 			ctx.fillStyle = '#5d6873';
 			let px = 30; // shrink to fit the width
-			do ctx.font = `400 ${px}px -apple-system, "Segoe UI", Roboto, sans-serif`;
+			do ctx.font = `400 ${px}px ${FONT}`;
 			while (ctx.measureText(this.hint).width > w - 2 * PAD && --px > 16);
 			ctx.textAlign = 'center';
 			ctx.fillText(this.hint, w / 2, h - PAD - HINT_H / 2 + 8);
@@ -122,7 +152,6 @@ function roundRect(ctx, x, y, w, h, r) {
 
 const CARD_W = 1200, CARD_H = 1140; // canvas pixels (room for 7 rows)
 const FOOTER_H = 190; // extra height for the footer tip (screenshot reminder)
-const FONT = '-apple-system, "Segoe UI", Roboto, sans-serif';
 const BADGE = {
 	stick: { fill: '#5d6873', text: '#fff' },
 	shot: { fill: '#7a4fd0', text: '#fff' },
