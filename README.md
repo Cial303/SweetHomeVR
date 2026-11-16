@@ -4,7 +4,7 @@ A WebXR viewer for [Sweet Home 3D](https://www.sweethome3d.com/) homes on Meta Q
 
 It runs in the Meta Quest Browser: no app store, no developer mode, no sideloading. The same page works on a desktop browser as a 2D preview, so you can check a file before putting the headset on.
 
-> Status: **phase 2 of 5**: 2D preview and the VR/AR dollhouse with jump-in at 1:1. Walking around (phase 3) and final performance work are next (see [SPEC.md](SPEC.md)).
+> Status: **phase 3 of 5**: 2D preview, the VR/AR dollhouse, and walking through the home at 1:1. Final polish and performance work are next (see [SPEC.md](SPEC.md)).
 
 ## Using it
 
@@ -32,15 +32,21 @@ Supported files:
 
 Press **Enter VR** (or **Enter AR** for passthrough) once a model is open.
 
+**Menu:** a small orange orb floats over your left hand. Point at it and pull the trigger, or press **A** or **X**, to open the menu in front of you. **B** / **Y** or a click elsewhere closes it. It opens by itself the first time.
+
 **Dollhouse**
 - The home stands on a museum-style plinth in front of you: the model is about 1.2 m across, with 40 cm of table around it.
 - **Thumbstick** left/right rotates it; up/down zooms it (½× to 4×).
 - **Grip** and move your hand to pick it up and move it.
 - Point the **laser** at it: an orange figure shows where you'd stand. **Trigger** takes you there at real size.
-- The floating menu: **Walk in** (at Sweet Home 3D's virtual visitor position), **Ceilings on/off**, **Recentre**, **Exit**.
+- Menu: **Walk in** (at Sweet Home 3D's virtual visitor position), **Ceilings on/off**, **Recentre**, **Exit VR**.
 
 **Inside, at 1:1**
-- **B** or **Y** goes back to the dollhouse. (Walking, teleporting and turning arrive in phase 3.)
+- **Left stick** walks where you look. Walls don't stop you; stairs and levels are followed.
+- **Right stick** left/right turns in steps (30°, or 45° from the menu).
+- **Right stick forward**, or hold a **trigger**, and aim: a blue ring shows where you'll land (red: not a floor). Let go to jump there.
+- **B** or **Y** goes back to the dollhouse.
+- Menu: **Dollhouse**, **Ceilings on/off**, **Turn 30° / 45°**, **Exit VR**.
 
 ## What gets shown from a Sweet Home 3D file
 
@@ -83,8 +89,8 @@ Put your own test homes in `tests/fixtures/private/` (ignored by git). Open a mo
 index.html        2D UI and import map
 config.js         Dropbox app key, defaults
 js/main.js        2D page, renderer, loading, UI
-js/xr.js          VR/AR session: dollhouse and 1:1 modes
-js/xr-input.js    controllers, lasers, buttons and thumbsticks
+js/xr.js          VR/AR session: dollhouse, walk mode, menu orb
+js/xr-input.js    controllers, lasers, buttons, thumbsticks, teleport arc
 js/panel.js       canvas-texture VR menu
 js/optimise.js    merge geometry by material, BVH for raycasts
 js/storage.js     recent models (IndexedDB)

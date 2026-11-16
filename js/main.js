@@ -358,8 +358,10 @@ function updateXRButtons() {
 	for (const [kind, label] of [['vr', 'Enter VR'], ['ar', 'Enter AR']]) {
 		if (!xrSupport[kind]) continue;
 		const b = document.createElement('button');
-		b.className = 'primary';
-		b.textContent = label;
+		b.className = 'xr';
+		// Simple headset glyph, then the label.
+		b.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 7h16a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-4.2l-2.1-2.4a2.3 2.3 0 0 0-3.4 0L8.2 17H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2zm3.5 3a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5zm9 0a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5z"/></svg>';
+		b.append(label);
 		b.disabled = !current;
 		b.title = current ? '' : 'Open a model first';
 		b.addEventListener('click', async () => {

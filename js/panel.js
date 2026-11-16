@@ -5,19 +5,20 @@
 import * as THREE from 'three';
 
 const PX_PER_M = 1024; // canvas pixels per metre of panel
-const PAD = 24, GAP = 16, BTN_H = 96, TITLE_H = 72;
+const PAD = 24, GAP = 16, BTN_H = 96, TITLE_H = 72, HINT_H = 56;
 
 export class Panel {
 	/**
 	 * @param items  [{ id, label }]
-	 * @param opts   { title, width (m) }
+	 * @param opts   { title, hint (small text under the buttons), width (m) }
 	 */
-	constructor(items, { title = '', width = 0.36 } = {}) {
+	constructor(items, { title = '', hint = '', width = 0.36 } = {}) {
 		this.items = items.map((i) => ({ ...i }));
 		this.title = title;
+		this.hint = hint;
 		this.hover = null;
 		const wPx = Math.round(width * PX_PER_M);
-		const hPx = PAD * 2 + (title ? TITLE_H : 0) + items.length * BTN_H + (items.length - 1) * GAP;
+		const hPx = PAD * 2 + (title ? TITLE_H : 0) + items.length * BTN_H + (items.length - 1) * GAP + (hint ? HINT_H : 0);
 		this.canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
 		if (this.canvas) { this.canvas.width = wPx; this.canvas.height = hPx; }
 		this.texture = this.canvas ? new THREE.CanvasTexture(this.canvas) : null;
@@ -65,6 +66,15 @@ export class Panel {
 			ctx.font = '500 40px -apple-system, "Segoe UI", Roboto, sans-serif';
 			ctx.textAlign = 'center';
 			ctx.fillText(it.label, r.x + r.w / 2, r.y + r.h / 2 + 2);
+			ctx.textAlign = 'left';
+		}
+		if (this.hint) {
+			ctx.fillStyle = '#5d6873';
+			let px = 30; // shrink to fit the width
+			do ctx.font = `400 ${px}px -apple-system, "Segoe UI", Roboto, sans-serif`;
+			while (ctx.measureText(this.hint).width > w - 2 * PAD && --px > 16);
+			ctx.textAlign = 'center';
+			ctx.fillText(this.hint, w / 2, h - PAD - HINT_H / 2 + 8);
 			ctx.textAlign = 'left';
 		}
 		this.texture.needsUpdate = true;

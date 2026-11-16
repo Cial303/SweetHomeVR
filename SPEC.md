@@ -113,12 +113,13 @@ Resolve MTL and texture paths relative to the model's folder through a `LoadingM
 - Use `local-floor` reference space.
 
 **XR dollhouse mode** (on entering XR, like SketchUp Viewer's tabletop view)
-- VR: a calm, minimal showroom (light floor with a faint grid, soft gradient sky) and a round white pedestal about 0.85 m high, 1 m in front of the user. AR: no room and no pedestal; the model floats at the same spot over passthrough.
-- The model is scaled to fit about 1.2 m across and sits on the pedestal.
+- VR: a calm, minimal showroom (light floor with a faint grid, soft gradient sky) and a rectangular museum plinth 0.75 m high with 40 cm of table around the model, its front edge 35 cm in front of the user (changed from a round pedestal at the user's request). AR: no room and no plinth; the model floats at the same spot over passthrough.
+- On entering XR (and when the headset is re-centred), the plinth is placed in front of where the user stands and looks, not at the floor origin.
+- The model is scaled to fit about 1.2 m across and sits on the plinth; it turns on the plinth, which stays still.
 - Thumbstick left/right rotates the model; up/down zooms it (×0.5 to ×4).
 - Grip plus moving the controller grabs and moves the model, keeping it upright (yaw only).
 - Each controller shows a laser ray. Pointing at the model shows a small person-height marker where the floor is; **trigger** enters 1:1 standing at that spot. Find the floor by casting downwards in model space and taking the first upward-facing hit.
-- Floating menu panel (canvas texture, laser-clickable): **Walk in** (at the observer camera position), **Ceilings on/off**, **Recentre**, **Exit**.
+- Menu (canvas texture, laser-clickable), summoned rather than always visible (changed at the user's request; SketchUp's fixed waist bar got in the way): a small orb floats over the left hand; pointing at it and pulling the trigger, or pressing **A or X**, opens the menu in front of the head. It closes on a choice, on B/Y, or on a click elsewhere. It opens by itself once, on the first entry, so it is discovered. Dollhouse items: **Walk in** (at the observer camera position), **Ceilings on/off**, **Recentre**, **Exit VR**.
 
 **XR 1:1 walk mode**
 - The model is at real scale. Move a rig `Group` that contains the camera and controllers.
@@ -126,8 +127,8 @@ Resolve MTL and texture paths relative to the model's folder through a `LoadingM
 - Right stick left/right: snap turn 30°.
 - Right stick forward, or holding either trigger: show a **parabolic teleport arc** with a landing ring. Valid only on surfaces with normal.y > 0.7 (blue); otherwise red. Release to teleport, with a short fade.
 - Floor following: each frame, cast down from 0.6 m above the feet. If a floor is within ±0.6 m, adopt its height (this handles stairs and levels). Walls don't block movement.
-- **B or Y:** back to dollhouse.
-- **A or X:** toggle a menu in front of the head with Dollhouse, Ceilings on/off, Snap angle 30°/45°, and Exit.
+- **B or Y:** back to dollhouse (or closes the menu if it is open).
+- **A or X** (or the left-hand orb): toggle a menu in front of the head with Dollhouse, Ceilings on/off, Snap angle 30°/45° (remembered), and Exit VR. Lasers are hidden while walking, except while the menu is open or a laser points at the orb.
 
 ## Project layout
 

@@ -15,6 +15,8 @@
 			--line: #d5dbe1;
 			--accent: #d9822b;
 			--accent-text: #ffffff;
+			--xr: #2f5fd0; /* headset buttons: distinct from the orange "open" actions */
+			--xr-text: #ffffff;
 			--warn: #b3261e;
 			--radius: 12px;
 		}
@@ -26,6 +28,7 @@
 				--muted: #9aa5af;
 				--line: #39424b;
 				--warn: #ff8a80;
+				--xr: #4f7cf0;
 			}
 		}
 		* { box-sizing: border-box; }
@@ -57,7 +60,12 @@
 		#status.error { color: var(--warn); }
 		#stats { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 		#stats .warn { color: var(--warn); }
-		#xr-buttons:empty { display: none; }
+		#xr-section:has(#xr-buttons:empty) { display: none; }
+		button.xr { background: var(--xr); border-color: var(--xr); color: var(--xr-text); font-weight: 600; padding: 12px; font-size: 16px; }
+		button.xr:hover { filter: brightness(1.1); border-color: var(--xr); }
+		button.xr svg { width: 20px; height: 20px; vertical-align: -4px; margin-right: 6px; }
+		details { margin-top: 10px; }
+		summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 		#recent { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 		#recent li { display: flex; gap: 6px; }
 		.recent-open { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 8px 12px; }
@@ -88,7 +96,10 @@
 			<button id="collapse" title="Hide panel" aria-label="Hide panel">–</button>
 		</header>
 
-		<div class="row" id="xr-buttons"></div>
+		<section id="xr-section">
+			<h2>View in headset</h2>
+			<div class="row" id="xr-buttons"></div>
+		</section>
 
 		<section id="recent-section" hidden>
 			<h2>Recent</h2>
@@ -112,16 +123,19 @@
 		</div>
 		<p class="hint">.sh3d (Sweet Home 3D 5.3+), .zip, .obj (+ .mtl and textures), .glb</p>
 
-		<div class="row">
-			<label for="units" style="flex:0 0 auto; align-self:center; color:var(--muted)">OBJ units</label>
-			<select id="units">
-				<option value="auto">Auto</option>
-				<option value="cm">cm</option>
-				<option value="m">m</option>
-				<option value="mm">mm</option>
-				<option value="in">in</option>
-			</select>
-		</div>
+		<details>
+			<summary>Options</summary>
+			<div class="row">
+				<label for="units" style="flex:0 0 auto; align-self:center; color:var(--muted)">OBJ units</label>
+				<select id="units">
+					<option value="auto">Auto</option>
+					<option value="cm">cm</option>
+					<option value="m">m</option>
+					<option value="mm">mm</option>
+					<option value="in">in</option>
+				</select>
+			</div>
+		</details>
 
 		<div id="status"></div>
 		<div id="stats"></div>
