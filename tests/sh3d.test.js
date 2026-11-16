@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { unzipSync } from 'fflate';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { parseXml, parseHome, buildHome, arcCircleCenter, pieceTransform } from '../js/sh3d.js';
-import { stripObjLines } from '../js/formats.js';
+import { prepareObjText } from '../js/formats.js';
 
 const FIX = path.resolve(import.meta.dirname, 'fixtures');
 
@@ -38,7 +38,7 @@ function objLoaderFor(entries) {
 		}
 		const text = new TextDecoder().decode(bytes);
 		if (text.startsWith('<?xml') || bytes[0] === 0x4d || text.startsWith('glTF')) return null;
-		return new OBJLoader().parse(stripObjLines(text).replace(/^\s*(mtllib|usemtl).*$/gm, ''));
+		return new OBJLoader().parse(prepareObjText(text).replace(/^\s*(mtllib|usemtl).*$/gm, ''));
 	};
 }
 
@@ -119,3 +119,22 @@ for (const file of fixtures) {
 		if (outside.length) t.diagnostic(`outside walls: ${outside.join(', ')}`);
 	});
 }
+
+test('OBJ concave polygons are triangulated without filling the hole (door frames)', () => {
+	// An upside-down U, like the front face of Sweet Home 3D's door frame.
+	const obj = ['v 0 0 0', 'v 1 0 0', 'v 1 3 0', 'v 2 3 0', 'v 2 0 0', 'v 3 0 0', 'v 3 4 0', 'v 0 4 0', 'f 1 2 3 4 5 6 7 8', 'l 1 2'].join('\n');
+	const mesh = new OBJLoader().parse(prepareObjText(obj)).children[0];
+	assert.ok(mesh.isMesh, 'faces stay a mesh even with a stray line record');
+	const pos = mesh.geometry.attributes.position;
+	assert.equal(pos.count, 6 * 3, '8-gon -> 6 triangles');
+	const tri = new THREE.Triangle();
+	const doorway = new THREE.Vector3(1.5, 1, 0);
+	let area = 0;
+	for (let i = 0; i < pos.count; i += 3) {
+		tri.setFromAttributeAndIndices(pos, i, i + 1, i + 2);
+		assert.ok(!tri.containsPoint(doorway), 'no triangle covers the doorway');
+		assert.ok(tri.getNormal(new THREE.Vector3()).z > 0, 'winding kept');
+		area += tri.getArea();
+	}
+	assert.ok(Math.abs(area - 9) < 1e-6, `area ${area}`); // 3x4 minus the 1x3 doorway
+});

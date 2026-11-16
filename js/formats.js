@@ -205,16 +205,78 @@ export async function loadModelEntry(store, path) {
 }
 
 /**
- * Removes line ("l") and point ("p") records. A single stray "l" record makes
- * three.js's OBJLoader turn a whole object into LineSegments; Sweet Home 3D
- * ignores them, and we never draw lines anyway.
+ * Prepares OBJ text for three.js's OBJLoader:
+ *
+ * 1. Removes line ("l") and point ("p") records. A single stray "l" record
+ *    makes OBJLoader turn a whole object into LineSegments; Sweet Home 3D
+ *    ignores them, and we never draw lines anyway.
+ * 2. Triangulates faces with 4+ corners properly. OBJLoader splits polygons
+ *    into a fan from the first corner, which only works for convex shapes:
+ *    on a U-shaped face (e.g. Sweet Home 3D's door frame) the fan fills in
+ *    the doorway. Concave quads and all larger polygons go through earcut.
  */
-export function stripObjLines(text) {
-	return text.replace(/^[ \t]*[lp][ \t][^\r\n]*/gm, '');
+export function prepareObjText(text) {
+	const verts = [];
+	const out = [];
+	const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+	for (const line of text.split(/\r?\n/)) {
+		const t = line.trimStart();
+		if (t.startsWith('v ')) {
+			const p = t.split(/\s+/);
+			verts.push(new THREE.Vector3(+p[1], +p[2], +p[3]));
+		} else if (/^[lp]\s/.test(t)) {
+			continue;
+		} else if (t.startsWith('f ')) {
+			const toks = t.split(/\s+/).slice(1).filter(Boolean);
+			if (toks.length >= 4) {
+				const tris = triangulateFace(toks, verts, a, b, c);
+				if (tris) { for (const tri of tris) out.push(`f ${tri.join(' ')}`); continue; }
+			}
+		}
+		out.push(line);
+	}
+	return out.join('\n');
+}
+
+/** Returns triangles (arrays of 3 face tokens) for an OBJ polygon, or null to keep it as is. */
+function triangulateFace(toks, verts, a, b, c) {
+	const pts = toks.map((tok) => {
+		const i = parseInt(tok, 10);
+		return verts[i < 0 ? verts.length + i : i - 1];
+	});
+	if (pts.some((p) => !p)) return null;
+	// Polygon normal (Newell's method)
+	const n = new THREE.Vector3();
+	for (let i = 0; i < pts.length; i++) {
+		const p = pts[i], q = pts[(i + 1) % pts.length];
+		n.x += (p.y - q.y) * (p.z + q.z);
+		n.y += (p.z - q.z) * (p.x + q.x);
+		n.z += (p.x - q.x) * (p.y + q.y);
+	}
+	if (n.lengthSq() === 0) return null;
+	const faces = (idx) => idx.map((tri) => {
+		// Keep each triangle facing the same way as the polygon.
+		const [i, j, k] = tri;
+		a.subVectors(pts[j], pts[i]); b.subVectors(pts[k], pts[i]);
+		return c.crossVectors(a, b).dot(n) < 0 ? [toks[i], toks[k], toks[j]] : [toks[i], toks[j], toks[k]];
+	});
+	if (pts.length === 4) {
+		// Convex quad: the usual split works; otherwise split along the other diagonal.
+		const ok = (i, j, k) => { a.subVectors(pts[j], pts[i]); b.subVectors(pts[k], pts[i]); return c.crossVectors(a, b).dot(n) > 0; };
+		if (ok(0, 1, 2) && ok(0, 2, 3)) return null;
+		return faces([[1, 2, 3], [1, 3, 0]]);
+	}
+	// Project on the plane most facing the normal, then earcut.
+	const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
+	const flat = pts.map((p) => (az >= ax && az >= ay ? new THREE.Vector2(p.x, p.y) : ax >= ay ? new THREE.Vector2(p.y, p.z) : new THREE.Vector2(p.z, p.x)));
+	let idx;
+	try { idx = THREE.ShapeUtils.triangulateShape(flat, []); } catch { return null; }
+	if (!idx || idx.length < pts.length - 2) return null;
+	return faces(idx);
 }
 
 async function loadObj(store, text, folder) {
-	text = stripObjLines(text);
+	text = prepareObjText(text);
 	const objLoader = new OBJLoader(store.manager);
 	const mtlNames = [...text.matchAll(/^\s*mtllib\s+(.+?)\s*$/gm)].map((m) => m[1]);
 	for (const name of mtlNames) {
