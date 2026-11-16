@@ -1,6 +1,6 @@
 // XR session and modes (SPEC.md, "Experience and controls").
 //
-//   dollhouse  the home on a pedestal (VR showroom) or floating (AR):
+//   dollhouse  the home on a plinth (VR showroom) or floating (AR):
 //              thumbstick rotate/zoom, grip to move, laser + trigger to jump
 //              in at 1:1, floating menu (Walk in, Ceilings, Recentre, Exit).
 //   walk       the home at 1:1. Phase 2: you stand where you pointed;
@@ -18,8 +18,8 @@ import { XRInput, yawOf } from './xr-input.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
-const PEDESTAL_HEIGHT = 0.85;
-const PEDESTAL_DISTANCE = 1.0;
+const PLINTH_HEIGHT = 0.75; // table height: you look down onto the model
+const PLINTH_DISTANCE = 1.0;
 const DOLLHOUSE_SIZE = 1.2; // metres across
 const ZOOM_MIN = 0.5, ZOOM_MAX = 4;
 const ROTATE_SPEED = 1.6; // rad/s at full stick
@@ -36,7 +36,7 @@ export class XRExperience {
 		this.session = null;
 		this.sessionMode = null; // 'vr' | 'ar'
 		this.mode = null; // 'dollhouse' | 'walk'
-		this.doll = { pos: new THREE.Vector3(0, PEDESTAL_HEIGHT, -PEDESTAL_DISTANCE), yaw: 0, zoom: 1 };
+		this.doll = { pos: new THREE.Vector3(0, PLINTH_HEIGHT, -PLINTH_DISTANCE), yaw: 0, zoom: 1 };
 		this.grab = null;
 		this.raycaster = new THREE.Raycaster();
 		this.raycaster.firstHitOnly = true;
@@ -75,17 +75,21 @@ export class XRExperience {
 		this.showroom = room;
 		this.scene.add(room);
 
-		// Stage: what Recentre moves (pedestal + menu), positioned relative to the user.
+		// Stage: what Recentre moves (plinth + menu), positioned relative to the user.
 		this.stage = new THREE.Group();
 		this.stage.name = 'stage';
+		// Museum plinth: sized to the model in setModel(); it turns with the
+		// model so the house always lines up with the table.
 		const pedestal = new THREE.Group();
-		const body = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.66, PEDESTAL_HEIGHT - 0.02, 64), new THREE.MeshLambertMaterial({ color: 0xffffff }));
-		body.position.y = (PEDESTAL_HEIGHT - 0.02) / 2;
-		const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.64, 0.64, 0.02, 64), new THREE.MeshLambertMaterial({ color: 0xf3f4f6 }));
-		cap.position.y = PEDESTAL_HEIGHT - 0.01;
-		pedestal.add(body, cap);
-		pedestal.position.set(0, 0, -PEDESTAL_DISTANCE);
+		pedestal.name = 'plinth';
+		pedestal.position.set(0, 0, -PLINTH_DISTANCE);
 		this.pedestal = pedestal;
+		this.plinthMaterials = {
+			top: new THREE.MeshLambertMaterial({ color: 0xffffff }),
+			body: new THREE.MeshLambertMaterial({ color: 0xf2f1ee }),
+			base: new THREE.MeshLambertMaterial({ color: 0x33383d }),
+		};
+		this.buildPlinth(1.2, 0.9);
 
 		this.panel = new Panel([
 			{ id: 'walk', label: 'Walk in' },
@@ -99,6 +103,28 @@ export class XRExperience {
 		this.scene.add(this.stage);
 		// Face the panel towards the user's default standing spot.
 		this.panel.mesh.lookAt(0, 1.45, 0);
+	}
+
+	/**
+	 * A rectangular exhibition plinth for a model footprint of w x d metres:
+	 * a thin white top slab, an off-white body, and a dark recessed base
+	 * (shadow gap) so it seems to float just above the floor.
+	 */
+	buildPlinth(w, d) {
+		const MARGIN = 0.08, SLAB = 0.03, GAP = 0.05, INSET = 0.025;
+		const W = Math.max(w + 2 * MARGIN, 0.5), D = Math.max(d + 2 * MARGIN, 0.5), H = PLINTH_HEIGHT;
+		const p = this.pedestal;
+		for (const m of p.children) m.geometry.dispose();
+		p.clear();
+		const box = (bw, bh, bd, y, mat) => {
+			const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), mat);
+			m.position.y = y;
+			p.add(m);
+		};
+		const M = this.plinthMaterials;
+		box(W, SLAB, D, H - SLAB / 2, M.top);
+		box(W - 0.01, H - SLAB - GAP, D - 0.01, GAP + (H - SLAB - GAP) / 2, M.body);
+		box(W - 2 * INSET, GAP, D - 2 * INSET, GAP / 2, M.base);
 	}
 
 	buildMarker() {
@@ -128,6 +154,7 @@ export class XRExperience {
 		this.centerer.add(...this.markers);
 		const size = model.bounds.getSize(new THREE.Vector3());
 		this.baseScale = DOLLHOUSE_SIZE / Math.max(size.x, size.z, 0.01);
+		this.buildPlinth(size.x * this.baseScale, size.z * this.baseScale);
 		this.panel.setLabel('ceilings', `Ceilings: ${model.layers.ceilings.visible ? 'on' : 'off'}`);
 	}
 
@@ -185,7 +212,7 @@ export class XRExperience {
 	// -----------------------------------------------------------------------
 
 	resetDollhouse() {
-		this.doll.pos.set(0, PEDESTAL_HEIGHT, -PEDESTAL_DISTANCE);
+		this.doll.pos.set(0, PLINTH_HEIGHT, -PLINTH_DISTANCE);
 		this.doll.yaw = 0;
 		this.doll.zoom = 1;
 	}
@@ -209,6 +236,7 @@ export class XRExperience {
 		this.anchor.rotation.set(0, this.stage.rotation.y + this.doll.yaw, 0);
 		this.anchor.scale.setScalar(this.baseScale * this.doll.zoom);
 		this.anchor.updateMatrixWorld(true);
+		this.pedestal.rotation.y = this.doll.yaw; // the plinth turns with the model
 	}
 
 	/** Moves the pedestal and menu in front of where the user now stands and looks. */
