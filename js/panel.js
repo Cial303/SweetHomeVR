@@ -121,9 +121,11 @@ function roundRect(ctx, x, y, w, h, r) {
 // ---------------------------------------------------------------------------
 
 const CARD_W = 1200, CARD_H = 1140; // canvas pixels (room for 7 rows)
+const FOOTER_H = 190; // extra height for the footer tip (screenshot reminder)
 const FONT = '-apple-system, "Segoe UI", Roboto, sans-serif';
 const BADGE = {
 	stick: { fill: '#5d6873', text: '#fff' },
+	shot: { fill: '#7a4fd0', text: '#fff' },
 	trigger: { fill: '#3d6fd8', text: '#fff' },
 	grip: { fill: '#2f9e6a', text: '#fff' },
 	button: { fill: '#1d2329', text: '#fff' },
@@ -135,11 +137,13 @@ export class ControlsCard {
 	 * @param title  e.g. 'Controls: dollhouse'
 	 * @param hands  { left: [{ kind, key, text }], right: [...] }
 	 *               kind: stick | trigger | grip | button | orb; key: badge text
+	 * @param footer { key, lines: [text, text] }: a full-width tip under both hands
 	 */
-	constructor(title, hands, { width = 0.46 } = {}) {
+	constructor(title, hands, { width = 0.46, footer = null } = {}) {
 		this.title = title;
 		this.hands = hands;
-		const w = CARD_W, h = CARD_H, height = width * h / w;
+		this.footer = footer;
+		const w = CARD_W, h = CARD_H + (footer ? FOOTER_H : 0), height = width * h / w;
 		this.size = { w, h };
 		this.canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
 		if (this.canvas) { this.canvas.width = w; this.canvas.height = h; }
@@ -170,8 +174,32 @@ export class ControlsCard {
 		// Divider
 		ctx.strokeStyle = '#e3e7eb';
 		ctx.lineWidth = 3;
-		ctx.beginPath(); ctx.moveTo(half, 130); ctx.lineTo(half, h - 40); ctx.stroke();
+		ctx.beginPath(); ctx.moveTo(half, 130); ctx.lineTo(half, CARD_H - 40); ctx.stroke();
+		if (this.footer) this.drawFooter(ctx, CARD_H, w);
 		this.texture.needsUpdate = true;
+	}
+
+	/** Full-width tip under both hands: a badge and up to two lines of text. */
+	drawFooter(ctx, y0, w) {
+		const { key, lines } = this.footer;
+		ctx.strokeStyle = '#e3e7eb';
+		ctx.lineWidth = 3;
+		ctx.beginPath(); ctx.moveTo(44, y0 - 10); ctx.lineTo(w - 44, y0 - 10); ctx.stroke();
+		const b = BADGE.shot, cy = y0 + FOOTER_H / 2 - 25;
+		ctx.font = `700 28px ${FONT}`;
+		const bw = Math.max(64, ctx.measureText(key).width + 32);
+		roundRect(ctx, 44, cy - 26, bw, 52, 14);
+		ctx.fillStyle = b.fill; ctx.fill();
+		ctx.fillStyle = b.text;
+		ctx.textAlign = 'center';
+		ctx.fillText(key, 44 + bw / 2, cy + 1);
+		ctx.textAlign = 'left';
+		const x = 44 + bw + 20, max = w - x - 44;
+		let px = 34;
+		do ctx.font = `400 ${px}px ${FONT}`;
+		while (lines.some((t) => ctx.measureText(t).width > max) && --px > 20);
+		ctx.fillStyle = '#1d2329';
+		lines.forEach((t, i) => ctx.fillText(t, x, cy + (i - (lines.length - 1) / 2) * (px + 12) + 1));
 	}
 
 	drawHand(ctx, side, x0, width) {

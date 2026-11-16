@@ -215,8 +215,14 @@ export class XRExperience {
 			{ kind: 'button', key: btn[1], text: 'Close the menu' },
 			{ kind: 'orb', key: 'Orb', text: 'Point or touch: menu' },
 		];
+		// Horizon OS screenshot: hold the Meta button (right controller) and pull a trigger.
+		const footer = { footer: { key: 'Screenshot', lines: [
+			'Close this menu, then hold the Meta button',
+			'(right hand) and pull a trigger.',
+			'Pictures are in the headset\'s Files app.',
+		] } };
 		const cards = {
-			dollhouse: new ControlsCard('Controls: dollhouse', { left: either('XY'), right: either('AB') }),
+			dollhouse: new ControlsCard('Controls: dollhouse', { left: either('XY'), right: either('AB') }, footer),
 			walk: new ControlsCard('Controls: walking', {
 				left: [
 					{ kind: 'stick', key: 'Stick', text: 'Walk where you look' },
@@ -235,7 +241,7 @@ export class XRExperience {
 					{ kind: 'button', key: 'B', text: 'Back to the dollhouse' },
 					{ kind: 'orb', key: 'Orb', text: 'Point or touch: menu' },
 				],
-			}),
+			}, footer),
 		};
 		for (const [mode, p] of Object.entries(this.menus)) {
 			p.mesh.visible = false;
