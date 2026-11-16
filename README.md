@@ -11,6 +11,9 @@ It runs in the Meta Quest Browser: no app store, no developer mode, no sideloadi
 1. Open the app's URL (GitHub Pages) in a browser.
 2. **Open file**, or paste a link (e.g. a Dropbox shared link) and press **Open from link**.
 3. Drag to orbit, scroll or pinch to zoom, right-drag to pan.
+4. Next time, tap the model under **Recent**: the last 5 models are kept in the browser, so reopening one needs no download. For a model opened from a link, **↻** downloads the latest version from the same link (handy after editing the home on the Mac). The last link you used is also remembered in the link box.
+
+**Tip for Dropbox links:** a Dropbox shared link stays the same when you overwrite the file with the same name. Save your home under a fixed name (e.g. `My home.sh3d`), share it once, and on the Quest you only ever type that link once; after that use **↻**.
 
 Supported files:
 

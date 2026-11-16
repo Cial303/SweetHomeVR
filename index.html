@@ -58,7 +58,14 @@
 		#stats { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 		#stats .warn { color: var(--warn); }
 		#xr-buttons:empty { display: none; }
-		#recent { list-style: none; padding: 0; margin: 0; }
+		#recent { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+		#recent li { display: flex; gap: 6px; }
+		.recent-open { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 8px 12px; }
+		.recent-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+		.recent-meta { font-size: 12px; color: var(--muted); }
+		/* Big enough to hit with a Quest controller laser */
+		.recent-icon { flex: 0 0 44px; padding: 0; font-size: 18px; }
+		[hidden] { display: none !important; }
 		.hint { font-size: 13px; color: var(--muted); margin: 6px 0 0; }
 	</style>
 	<script type="importmap">
@@ -82,6 +89,11 @@
 		</header>
 
 		<div class="row" id="xr-buttons"></div>
+
+		<section id="recent-section" hidden>
+			<h2>Recent</h2>
+			<ul id="recent"></ul>
+		</section>
 
 		<h2>Open a model</h2>
 		<!-- No restrictive accept attribute: Quest Browser greys out uncommon extensions. -->

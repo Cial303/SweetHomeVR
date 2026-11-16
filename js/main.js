@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CONFIG } from '../config.js';
 import { openFiles, UserError } from './formats.js';
+import { listRecents, getRecent, addRecent, removeRecent, getLastLink, setLastLink } from './storage.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -105,8 +106,11 @@ function disposeCurrent() {
 	current = null;
 }
 
-/** Loads [{ name, bytes }] and shows it. */
-async function load(files, label) {
+/**
+ * Loads [{ name, bytes }] and shows it.
+ * source: { type: 'link', url } | { type: 'file' } | { type: 'recent' } (not re-saved)
+ */
+async function load(files, label, source = { type: 'file' }) {
 	setStatus(`Opening ${label}…`);
 	try {
 		const result = await openFiles(files, { units: $('units').value, onProgress: (t) => setStatus(t) });
@@ -118,6 +122,8 @@ async function load(files, label) {
 		setStatus(`${label}`);
 		showStats();
 		document.title = `${label} · Sweet Home VR`;
+		// Remember it for one-tap reopening (only once it opened successfully).
+		if (source.type !== 'recent') addRecent({ name: label, files, source }).then(renderRecents);
 	} catch (e) {
 		console.error(e);
 		setStatus(e instanceof UserError ? e.message : `Could not open ${label}: ${e.message}`, true);
@@ -161,20 +167,73 @@ export function directLink(url) {
 	return u.toString();
 }
 
-async function loadUrl(url) {
+async function loadUrl(url, { remember = true } = {}) {
+	url = url.trim();
 	const direct = directLink(url);
 	const name = decodeURIComponent(new URL(direct, location.href).pathname.split('/').pop() || 'model');
 	setStatus(`Downloading ${name}…`);
 	let bytes;
 	try {
-		const res = await fetch(direct);
+		// no-store: after editing the home on the Mac, get the new version.
+		const res = await fetch(direct, { cache: 'no-store' });
 		if (!res.ok) throw new Error(`HTTP ${res.status}`);
 		bytes = new Uint8Array(await res.arrayBuffer());
 	} catch (e) {
 		setStatus(`Could not download that link (${e.message}). For Dropbox, use a shared link to a single file.`, true);
 		throw e;
 	}
-	return load([{ name, bytes }], name);
+	if (remember) { setLastLink(url); $('link-input').value = url; }
+	return load([{ name, bytes }], name, { type: 'link', url });
+}
+
+// ---------------------------------------------------------------------------
+// Recent models
+// ---------------------------------------------------------------------------
+
+function ago(date) {
+	const s = (Date.now() - date) / 1000;
+	if (s < 60) return 'just now';
+	if (s < 3600) return `${Math.round(s / 60)} min ago`;
+	if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+	return new Date(date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+
+async function renderRecents() {
+	const list = $('recent');
+	const items = await listRecents();
+	$('recent-section').hidden = items.length === 0;
+	list.replaceChildren(...items.map((r) => {
+		const li = document.createElement('li');
+		const open = document.createElement('button');
+		open.className = 'recent-open';
+		open.title = 'Open the saved copy';
+		const mb = (r.size / 1048576).toFixed(r.size < 10485760 ? 1 : 0);
+		open.innerHTML = `<span class="recent-name"></span><span class="recent-meta">${r.source.type === 'link' ? 'Link' : 'File'} · ${mb} MB · ${ago(r.date)}</span>`;
+		open.querySelector('.recent-name').textContent = r.name;
+		open.addEventListener('click', async () => {
+			const rec = await getRecent(r.id);
+			if (!rec) { setStatus('That saved copy is no longer available.', true); renderRecents(); return; }
+			load(rec.files, rec.name, { type: 'recent' }).catch(() => {});
+		});
+		li.append(open);
+		if (r.source.type === 'link') {
+			const refresh = document.createElement('button');
+			refresh.className = 'recent-icon';
+			refresh.textContent = '↻';
+			refresh.title = 'Download the latest version from the same link';
+			refresh.setAttribute('aria-label', `Update ${r.name} from its link`);
+			refresh.addEventListener('click', () => loadUrl(r.source.url).catch(() => {}));
+			li.append(refresh);
+		}
+		const del = document.createElement('button');
+		del.className = 'recent-icon';
+		del.textContent = '×';
+		del.title = 'Remove from this list';
+		del.setAttribute('aria-label', `Remove ${r.name}`);
+		del.addEventListener('click', async () => { await removeRecent(r.id); renderRecents(); });
+		li.append(del);
+		return li;
+	}));
 }
 
 // ---------------------------------------------------------------------------
@@ -195,7 +254,7 @@ $('file-input').addEventListener('change', async (ev) => {
 		setStatus('Quest Browser blocked this file type. Rename it to .zip and try again', true);
 		return;
 	}
-	load(files, picked.length === 1 ? picked[0].name : `${picked.length} files`).catch(() => {});
+	load(files, picked.length === 1 ? picked[0].name : `${picked.length} files`, { type: 'file' }).catch(() => {});
 });
 
 $('open-link').addEventListener('click', () => {
@@ -204,6 +263,8 @@ $('open-link').addEventListener('click', () => {
 });
 $('link-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('open-link').click(); });
 $('units').value = CONFIG.defaultObjUnits;
+$('link-input').value = getLastLink();
+renderRecents();
 
 $('collapse').addEventListener('click', () => {
 	const c = $('panel').classList.toggle('collapsed');
@@ -213,7 +274,7 @@ $('collapse').addEventListener('click', () => {
 // ?model=<url> opens a model straight away (also used by the screenshot tests).
 const params = new URLSearchParams(location.search);
 const initial = params.get('model');
-const ready = initial ? loadUrl(initial).then(() => true, () => false) : Promise.resolve(true);
+const ready = initial ? loadUrl(initial, { remember: false }).then(() => true, () => false) : Promise.resolve(true);
 if (!initial) setStatus('Open a Sweet Home 3D file to start.');
 
 // Test hooks for scripts/screenshots.js
