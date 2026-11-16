@@ -9,7 +9,7 @@ It runs in the Meta Quest Browser: no app store, no developer mode, no sideloadi
 ## Using it
 
 1. Open the app's URL (GitHub Pages) in a browser.
-2. **Open file**, or paste a link (e.g. a Dropbox shared link) and press **Open from link**.
+2. **Open from Dropbox** (browse your Dropbox and tap the file), **Open file**, or paste a link (e.g. a Dropbox shared link) and press **Open from link**.
 3. Drag to orbit, scroll or pinch to zoom, right-drag to pan.
 4. Next time, tap the model under **Recent**: the last 5 models are kept in the browser, so reopening one needs no download. For a model opened from a link, **↻** downloads the latest version from the same link (handy after editing the home on the Mac). The last link you used is also remembered in the link box.
 
@@ -33,6 +33,16 @@ Walls (including sloping and round walls, colours and textures per side), door a
 ## Hosting
 
 The site is plain static files with no build step: GitHub Pages serves the repository root. WebXR only works over HTTPS, so on the Quest use the GitHub Pages URL, not a local `http://` address.
+
+### Dropbox Chooser (for your own copy)
+
+The **Open from Dropbox** button uses Dropbox's official [Chooser](https://www.dropbox.com/developers/chooser). If you host your own copy, register your own key:
+
+1. At [dropbox.com/developers/apps](https://www.dropbox.com/developers/apps) choose **Create app**, *Scoped access*, *App folder*, and a unique name.
+2. In the app's **Settings**, add your site's domain (e.g. `yourname.github.io`) under **Chooser / Saver / Embedder domains**.
+3. Put the **App key** (not the secret) in `config.js` as `dropboxAppKey`.
+
+Without a key the button is simply hidden. The Chooser script is the only file loaded from another site (dropbox.com), and only when a key is set.
 
 ## Development
 

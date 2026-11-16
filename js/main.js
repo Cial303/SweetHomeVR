@@ -167,6 +167,31 @@ export function directLink(url) {
 	return u.toString();
 }
 
+/**
+ * Downloads a URL into bytes, showing progress in the status line.
+ * no-store: after editing the home on the Mac, always get the new version.
+ */
+async function download(url, name, expectedSize = 0) {
+	const res = await fetch(url, { cache: 'no-store' });
+	if (!res.ok) throw new Error(`HTTP ${res.status}`);
+	const total = expectedSize || Number(res.headers.get('Content-Length')) || 0;
+	if (!res.body || !total) return new Uint8Array(await res.arrayBuffer());
+	const reader = res.body.getReader();
+	const chunks = [];
+	let got = 0;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		chunks.push(value);
+		got += value.length;
+		setStatus(`Downloading ${name}… ${Math.min(100, Math.round((got / total) * 100))}% of ${(total / 1048576).toFixed(1)} MB`);
+	}
+	const bytes = new Uint8Array(got);
+	let off = 0;
+	for (const c of chunks) { bytes.set(c, off); off += c.length; }
+	return bytes;
+}
+
 async function loadUrl(url, { remember = true } = {}) {
 	url = url.trim();
 	const direct = directLink(url);
@@ -174,16 +199,62 @@ async function loadUrl(url, { remember = true } = {}) {
 	setStatus(`Downloading ${name}…`);
 	let bytes;
 	try {
-		// no-store: after editing the home on the Mac, get the new version.
-		const res = await fetch(direct, { cache: 'no-store' });
-		if (!res.ok) throw new Error(`HTTP ${res.status}`);
-		bytes = new Uint8Array(await res.arrayBuffer());
+		bytes = await download(direct, name);
 	} catch (e) {
 		setStatus(`Could not download that link (${e.message}). For Dropbox, use a shared link to a single file.`, true);
 		throw e;
 	}
 	if (remember) { setLastLink(url); $('link-input').value = url; }
 	return load([{ name, bytes }], name, { type: 'link', url });
+}
+
+// ---------------------------------------------------------------------------
+// Dropbox Chooser (official drop-in, https://www.dropbox.com/developers/chooser)
+// ---------------------------------------------------------------------------
+// The Chooser script must come from dropbox.com (it is Dropbox's own UI), so
+// it is the one script not vendored. It is only loaded when an app key is set
+// in config.js. Direct links are CORS-enabled and expire after 4 hours, which
+// is fine: what we open is cached under Recent.
+
+const MODEL_EXTENSIONS = ['.sh3d', '.zip', '.obj', '.mtl', '.glb', '.gltf', '.bin', '.dae', '.3ds', '.jpg', '.jpeg', '.png'];
+
+function setupDropbox() {
+	const key = CONFIG.dropboxAppKey;
+	if (!key) return;
+	const s = document.createElement('script');
+	s.src = 'https://www.dropbox.com/static/api/2/dropins.js';
+	s.id = 'dropboxjs';
+	s.dataset.appKey = key;
+	s.onload = () => {
+		if (window.Dropbox?.isBrowserSupported?.() === false) return;
+		$('open-dropbox').hidden = false;
+		$('open-file').classList.remove('primary'); // Dropbox becomes the main way in
+	};
+	s.onerror = () => console.warn('Dropbox Chooser could not be loaded');
+	document.head.appendChild(s);
+}
+
+function openFromDropbox() {
+	if (!window.Dropbox) { setStatus('Dropbox is not available right now. Try Open from link instead.', true); return; }
+	// Must run directly in the click handler, or the browser blocks the popup.
+	window.Dropbox.choose({
+		linkType: 'direct',
+		multiselect: true, // an OBJ can come with its .mtl and textures
+		extensions: MODEL_EXTENSIONS,
+		success: async (picked) => {
+			const label = picked.length === 1 ? picked[0].name : `${picked.length} files`;
+			let files;
+			try {
+				files = [];
+				for (const f of picked) files.push({ name: f.name, bytes: await download(f.link, f.name, f.bytes) });
+			} catch (e) {
+				setStatus(`Could not download from Dropbox (${e.message}).`, true);
+				return;
+			}
+			load(files, label, { type: 'dropbox' }).catch(() => {});
+		},
+		cancel: () => {},
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -208,7 +279,8 @@ async function renderRecents() {
 		open.className = 'recent-open';
 		open.title = 'Open the saved copy';
 		const mb = (r.size / 1048576).toFixed(r.size < 10485760 ? 1 : 0);
-		open.innerHTML = `<span class="recent-name"></span><span class="recent-meta">${r.source.type === 'link' ? 'Link' : 'File'} · ${mb} MB · ${ago(r.date)}</span>`;
+		const kind = { link: 'Link', dropbox: 'Dropbox', file: 'File' }[r.source.type] || 'File';
+		open.innerHTML = `<span class="recent-name"></span><span class="recent-meta">${kind} · ${mb} MB · ${ago(r.date)}</span>`;
 		open.querySelector('.recent-name').textContent = r.name;
 		open.addEventListener('click', async () => {
 			const rec = await getRecent(r.id);
@@ -241,6 +313,8 @@ async function renderRecents() {
 // ---------------------------------------------------------------------------
 
 $('open-file').addEventListener('click', () => $('file-input').click());
+$('open-dropbox').addEventListener('click', openFromDropbox);
+setupDropbox();
 $('file-input').addEventListener('change', async (ev) => {
 	const picked = [...ev.target.files];
 	ev.target.value = '';
