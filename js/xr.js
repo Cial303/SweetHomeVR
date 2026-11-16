@@ -19,7 +19,8 @@ import { XRInput, yawOf } from './xr-input.js';
 const UP = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
 const PLINTH_HEIGHT = 0.75; // table height: you look down onto the model
-const PLINTH_DISTANCE = 1.0;
+const PLINTH_MARGIN = 0.4; // table left around the model (it is ~1.2 m across)
+const PLINTH_FRONT_GAP = 0.35; // from where you stand to the plinth's front edge
 const DOLLHOUSE_SIZE = 1.2; // metres across
 const ZOOM_MIN = 0.5, ZOOM_MAX = 4;
 const ROTATE_SPEED = 1.6; // rad/s at full stick
@@ -36,7 +37,8 @@ export class XRExperience {
 		this.session = null;
 		this.sessionMode = null; // 'vr' | 'ar'
 		this.mode = null; // 'dollhouse' | 'walk'
-		this.doll = { pos: new THREE.Vector3(0, PLINTH_HEIGHT, -PLINTH_DISTANCE), yaw: 0, zoom: 1 };
+		this.plinthDistance = 1; // centre of the plinth in front of the user; set by buildPlinth()
+		this.doll = { pos: new THREE.Vector3(0, PLINTH_HEIGHT, -this.plinthDistance), yaw: 0, zoom: 1 };
 		this.grab = null;
 		this.raycaster = new THREE.Raycaster();
 		this.raycaster.firstHitOnly = true;
@@ -78,18 +80,16 @@ export class XRExperience {
 		// Stage: what Recentre moves (plinth + menu), positioned relative to the user.
 		this.stage = new THREE.Group();
 		this.stage.name = 'stage';
-		// Museum plinth: sized to the model in setModel(); it turns with the
-		// model so the house always lines up with the table.
+		// Museum plinth: sized to the model in setModel(). It stays still and
+		// the model turns on it; the 40 cm margin keeps it on the table.
 		const pedestal = new THREE.Group();
 		pedestal.name = 'plinth';
-		pedestal.position.set(0, 0, -PLINTH_DISTANCE);
 		this.pedestal = pedestal;
 		this.plinthMaterials = {
 			top: new THREE.MeshLambertMaterial({ color: 0xffffff }),
 			body: new THREE.MeshLambertMaterial({ color: 0xf2f1ee }),
 			base: new THREE.MeshLambertMaterial({ color: 0x33383d }),
 		};
-		this.buildPlinth(1.2, 0.9);
 
 		this.panel = new Panel([
 			{ id: 'walk', label: 'Walk in' },
@@ -97,22 +97,26 @@ export class XRExperience {
 			{ id: 'recentre', label: 'Recentre' },
 			{ id: 'exit', label: 'Exit' },
 		], { title: 'Sweet Home VR' });
-		this.panel.mesh.position.set(-0.95, 1.2, -0.6);
 		this.stage.add(pedestal, this.panel.mesh);
 		this.stage.visible = false;
 		this.scene.add(this.stage);
-		// Face the panel towards the user's default standing spot.
-		this.panel.mesh.lookAt(0, 1.45, 0);
+		this.buildPlinth(1.2, 0.9);
 	}
 
 	/**
 	 * A rectangular exhibition plinth for a model footprint of w x d metres:
 	 * a thin white top slab, an off-white body, and a dark recessed base
-	 * (shadow gap) so it seems to float just above the floor.
+	 * (shadow gap) so it seems to float just above the floor. Also places the
+	 * plinth in front of the user and the menu beside it.
 	 */
 	buildPlinth(w, d) {
-		const MARGIN = 0.08, SLAB = 0.03, GAP = 0.05, INSET = 0.025;
-		const W = Math.max(w + 2 * MARGIN, 0.5), D = Math.max(d + 2 * MARGIN, 0.5), H = PLINTH_HEIGHT;
+		const SLAB = 0.03, GAP = 0.05, INSET = 0.025;
+		const W = w + 2 * PLINTH_MARGIN, D = d + 2 * PLINTH_MARGIN, H = PLINTH_HEIGHT;
+		this.plinthDistance = D / 2 + PLINTH_FRONT_GAP;
+		this.pedestal.position.set(0, 0, -this.plinthDistance);
+		// Menu: left of the plinth, near its front corner, facing the user.
+		this.panel.mesh.position.set(-(W / 2 + 0.3), 1.2, -(PLINTH_FRONT_GAP + 0.2));
+		this.panel.mesh.lookAt(0, 1.45, 0);
 		const p = this.pedestal;
 		for (const m of p.children) m.geometry.dispose();
 		p.clear();
@@ -212,7 +216,7 @@ export class XRExperience {
 	// -----------------------------------------------------------------------
 
 	resetDollhouse() {
-		this.doll.pos.set(0, PLINTH_HEIGHT, -PLINTH_DISTANCE);
+		this.doll.pos.set(0, PLINTH_HEIGHT, -this.plinthDistance);
 		this.doll.yaw = 0;
 		this.doll.zoom = 1;
 	}
@@ -236,7 +240,6 @@ export class XRExperience {
 		this.anchor.rotation.set(0, this.stage.rotation.y + this.doll.yaw, 0);
 		this.anchor.scale.setScalar(this.baseScale * this.doll.zoom);
 		this.anchor.updateMatrixWorld(true);
-		this.pedestal.rotation.y = this.doll.yaw; // the plinth turns with the model
 	}
 
 	/** Moves the pedestal and menu in front of where the user now stands and looks. */

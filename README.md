@@ -33,7 +33,7 @@ Supported files:
 Press **Enter VR** (or **Enter AR** for passthrough) once a model is open.
 
 **Dollhouse**
-- The home stands on a museum-style plinth in front of you, about 1.2 m across.
+- The home stands on a museum-style plinth in front of you: the model is about 1.2 m across, with 40 cm of table around it.
 - **Thumbstick** left/right rotates it; up/down zooms it (½× to 4×).
 - **Grip** and move your hand to pick it up and move it.
 - Point the **laser** at it: an orange figure shows where you'd stand. **Trigger** takes you there at real size.
