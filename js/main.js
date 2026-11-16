@@ -8,6 +8,7 @@ import { CONFIG } from '../config.js';
 import { openFiles, UserError } from './formats.js';
 import { optimiseModel } from './optimise.js';
 import { XRExperience } from './xr.js';
+import { Lighting, TIMES } from './lighting.js';
 import { listRecents, getRecent, addRecent, removeRecent, getLastLink, setLastLink } from './storage.js';
 
 const $ = (id) => document.getElementById(id);
@@ -38,11 +39,12 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.maxPolarAngle = Math.PI * 0.495; // stay above the ground
 
-// One hemisphere light and one directional light, no shadows (SPEC.md, performance).
-const hemi = new THREE.HemisphereLight(0xffffff, 0xb4b0a8, 2.2);
-const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-sun.position.set(0.6, 1, 0.35);
-scene.add(hemi, sun);
+// One hemisphere light and one sun; time of day and optional shadows (lighting.js).
+const lighting = new Lighting(scene, renderer);
+const LIGHT_KEYS = { time: 'svr.time', shadows: 'svr.shadows' };
+const savedTime = safeGet(LIGHT_KEYS.time);
+if (TIMES.includes(savedTime)) lighting.setTime(savedTime);
+if (safeGet(LIGHT_KEYS.shadows) === '1') lighting.setShadows(true);
 
 // anchor: dollhouse placement in XR (identity on the 2D page and at 1:1).
 // centerer: puts the model's bottom-centre at the anchor's origin.
@@ -55,7 +57,25 @@ scene.add(anchor);
 
 let current = null; // result of openFiles(), with root replaced by the merged model
 
-const xr = new XRExperience({ renderer, scene, camera, rig, anchor, centerer, onEnd: () => { controls.enabled = true; frame('iso'); } });
+const xr = new XRExperience({ renderer, scene, camera, rig, anchor, centerer, lighting, onEnd: () => {
+	controls.enabled = true;
+	scene.background = lighting.background();
+	lighting.fit();
+	frame('iso');
+} });
+
+// When the light changes (here or from the headset menu): remember it and update the views.
+lighting.onChange = () => {
+	safeSet(LIGHT_KEYS.time, lighting.time);
+	safeSet(LIGHT_KEYS.shadows, lighting.shadows ? '1' : '0');
+	if (!renderer.xr.isPresenting) scene.background = lighting.background();
+	document.body.classList.toggle('dark-sky', lighting.time === 'night'); // light text over the night sky
+	xr.updateSky();
+	xr.updateLabels();
+	$('time').value = lighting.time;
+	$('shadows').checked = lighting.shadows;
+};
+lighting.onChange();
 
 window.addEventListener('resize', () => {
 	if (renderer.xr.isPresenting) return;
@@ -157,7 +177,15 @@ async function load(files, label, source = { type: 'file' }) {
 		// anything, so stairs work. One level: you stay on the floor.
 		const elevations = new Set([...(result.home?.levels.values() ?? [])].filter((l) => l.viewable).map((l) => l.elevation));
 		xr.setModel({ group: current.root, layers: current.layers, bounds: current.bounds, observer: current.observer, skyColor: result.home?.skyColor, multiLevel: elevations.size > 1 });
-		if (result.home) scene.background = new THREE.Color(result.home.skyColor);
+		// Sharper textures at grazing angles (floors), without any flicker.
+		const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+		current.root.traverse((o) => {
+			for (const m of [].concat(o.material || [])) {
+				if (m.map && m.map.anisotropy !== aniso) { m.map.anisotropy = aniso; m.map.needsUpdate = true; }
+			}
+		});
+		lighting.setHome({ compass: result.home?.compass, skyColor: result.home?.skyColor });
+		lighting.setSubject(centerer, current.bounds);
 		frame('iso');
 		updateXRButtons();
 		setStatus(`Loaded ${label}.`);
@@ -415,6 +443,8 @@ $('open-link').addEventListener('click', () => {
 	const url = $('link-input').value;
 	if (url.trim()) loadUrl(url).catch(() => {});
 });
+$('time').addEventListener('change', (e) => lighting.setTime(e.target.value));
+$('shadows').addEventListener('change', (e) => lighting.setShadows(e.target.checked));
 $('link-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('open-link').click(); });
 $('units').value = CONFIG.defaultObjUnits;
 $('link-input').value = getLastLink();
@@ -433,6 +463,7 @@ if (!initial) setStatus('Open a Sweet Home 3D file to start.');
 
 // Test hooks for scripts/screenshots.js
 window.__svr = {
+	lighting,
 	ready,
 	frame: (view) => { frame(view); controls.update(); renderer.render(scene, camera); },
 	look: (pos, target) => { camera.position.set(...pos); controls.target.set(...target); controls.update(); renderer.render(scene, camera); },
@@ -442,3 +473,6 @@ window.__svr = {
 	renderer,
 	get current() { return current; },
 };
+
+function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function safeSet(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }

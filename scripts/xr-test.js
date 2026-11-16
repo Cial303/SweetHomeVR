@@ -148,6 +148,14 @@ s = await state();
 check('grip moves the model', Math.hypot(s.pos[0] - pos0[0], s.pos[1] - pos0[1]) > 0.2, `${pos0.map((v) => v.toFixed(2))} -> ${s.pos.map((v) => v.toFixed(2))}`);
 await shot('moved');
 
+// Pushing it down stops at the plinth top (0.6 m).
+await aim('left', [-0.2, 1.0, -0.4], [-0.2, 0.8, -1.4]); await frames(3);
+await button('left', 'squeeze', 1); await frames(4);
+await aim('left', [-0.2, 0.3, -0.4], [-0.2, 0.1, -1.4]); await frames(8);
+s = await state();
+await button('left', 'squeeze', 0); await frames(4);
+check('model stays on top of the plinth', Math.abs(s.pos[1] - 0.6) < 1e-6, `y ${s.pos[1].toFixed(3)}`);
+
 // Left orb (hand raised into view): the right laser makes it glow, a click opens the menu.
 await aim('left', [-0.12, 1.2, -0.4], [0.1, 0.9, -1.2]);
 await frames(3);
@@ -175,6 +183,19 @@ await clickMenu('ceilings');
 s = await state();
 check('Ceilings toggles and the menu stays open', s.ceilings === !c0 && s.menu === 'dollhouse');
 await clickMenu('ceilings'); // back on
+
+// Light and shadows.
+const t0 = await page.evaluate(() => window.__svr.lighting.time);
+await clickMenu('light');
+const t1 = await page.evaluate(() => window.__svr.lighting.time);
+check('Light changes the time of day', t1 !== t0, `${t0} -> ${t1}`);
+for (let i = 0; i < 3; i++) await clickMenu('light'); // round to where it was
+await clickMenu('shadows');
+s = await page.evaluate(() => ({ on: window.__svr.lighting.shadows, map: window.__svr.renderer.shadowMap.enabled, time: window.__svr.lighting.time }));
+check('Shadows turn on', s.on && s.map && s.time === t0, JSON.stringify(s));
+await restRight(); await frames(5);
+await shot('dollhouse-shadows');
+s = await state();
 if (s.session === 'ar') {
 	await clickMenu('view');
 	s = await state();

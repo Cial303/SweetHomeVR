@@ -37,9 +37,9 @@ Press **Enter VR** once a model is open. In the headset, the menu switches betwe
 **Dollhouse**
 - The home stands on a low museum plinth in a gallery room. You see it as if you were about 2 m tall, so it's easy to look into the rooms.
 - **Thumbstick** left/right rotates it; up/down zooms it (½× to 4×).
-- **Grip** and move your hand to pick it up and move it.
 - Point the **laser** at it: an orange figure shows where you'd stand. **Trigger** takes you there at real size.
-- Menu: **Walk in** (at Sweet Home 3D's virtual visitor position), **Ceilings on/off**, **View: VR / passthrough**, **Recentre**, **Exit VR**.
+- **Grip** and move your hand to lift it or move it; it never sinks into the plinth.
+- Menu: **Walk in** (at Sweet Home 3D's virtual visitor position), **Recentre**, **Light** (morning, noon, sunset, night), **Shadows on/off**, **Ceilings on/off**, **View: VR / passthrough**, **Exit VR**.
 
 **Inside, at 1:1**
 - **Left stick** walks where you look. Walls don't stop you. In a one-level home you stay on the floor and walk through furniture; in a home with several levels you can step onto anything, so stairs work.
@@ -47,7 +47,9 @@ Press **Enter VR** once a model is open. In the headset, the menu switches betwe
 - **Right stick** left/right turns in steps (15°, 30° or 45°, set in the menu).
 - **Right stick forward**, or **hold a trigger**, and aim: a blue ring shows where you'll land (red on a wall). Let go to jump there.
 - **B** or **Y** goes back to the dollhouse.
-- Menu: **Dollhouse**, **Ceilings on/off**, **View**, **Turn**, **Height** (yours, 1.4, 1.7 or 2.0 m), **Exit VR**.
+- Menu: **Dollhouse**, **Ceilings on/off**, **Light**, **Shadows**, **Turn**, **Height** (yours, 1.4, 1.7 or 2.0 m), **View**, **Exit VR**.
+
+**Light and shadows:** the sun comes from the right direction for your home, using the compass in the Sweet Home 3D file. Shadows are off by default; when on, they are computed once (not every frame), so walking stays smooth. With ceilings on, sunlight only enters through the windows; turn ceilings off to let it in from above. The same Light and Shadows settings are under **Options** on the 2D page.
 
 ## What gets shown from a Sweet Home 3D file
 
@@ -93,6 +95,7 @@ js/main.js        2D page, renderer, loading, UI
 js/xr.js          VR/AR session: gallery and dollhouse, walk mode, menu orbs
 js/xr-input.js    controllers, lasers, buttons, thumbsticks, teleport arc
 js/panel.js       canvas-texture VR menu and controls card
+js/lighting.js    time of day (sun from the home's compass) and shadows
 js/optimise.js    merge geometry by material, BVH for raycasts
 js/storage.js     recent models (IndexedDB)
 js/sh3d.js        SH3D parser and scene builder (no DOM; Node-testable)

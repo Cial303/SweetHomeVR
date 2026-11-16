@@ -64,6 +64,8 @@
 			text-shadow: 0 0 3px rgba(255,255,255,.9), 0 0 8px rgba(255,255,255,.6); }
 		#stats .warn { color: #b3261e; }
 		#stats .name { font-weight: 600; font-size: 14px; }
+		body.dark-sky #stats { color: #f1f4f7; text-shadow: 0 0 3px rgba(0,0,0,.9), 0 0 8px rgba(0,0,0,.6); }
+		body.dark-sky #stats .warn { color: #ff9a90; }
 		@media (max-width: 720px) { #stats { top: auto; bottom: 12px; max-width: calc(100vw - 32px); } }
 		#xr-section:has(#xr-buttons:empty) { display: none; }
 		button.xr { background: var(--xr); border-color: var(--xr); color: var(--xr-text); font-weight: 700; padding: 15px 12px; font-size: 18px; border-radius: 10px; }
@@ -125,6 +127,16 @@
 
 		<details>
 			<summary>Options</summary>
+			<div class="row">
+				<label for="time" style="flex:0 0 auto; align-self:center; color:var(--muted)">Light</label>
+				<select id="time">
+					<option value="morning">Morning</option>
+					<option value="noon">Noon</option>
+					<option value="sunset">Sunset</option>
+					<option value="night">Night</option>
+				</select>
+				<label style="flex:0 0 auto; align-self:center; color:var(--muted)"><input type="checkbox" id="shadows"> Shadows</label>
+			</div>
 			<div class="row">
 				<label for="units" style="flex:0 0 auto; align-self:center; color:var(--muted)">OBJ units</label>
 				<select id="units">

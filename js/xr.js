@@ -54,10 +54,11 @@ const KEYS = { turn: 'svr.snapAngle', height: 'svr.height', view: 'svr.view' };
 export class XRExperience {
 	/**
 	 * @param opts.renderer, opts.scene, opts.camera, opts.rig, opts.anchor, opts.centerer
+	 * @param opts.lighting  Lighting (time of day, shadows): the menu changes it
 	 * @param opts.onEnd()  called after the session ends (2D page restores its view)
 	 */
-	constructor({ renderer, scene, camera, rig, anchor, centerer, onEnd }) {
-		Object.assign(this, { renderer, scene, camera, rig, anchor, centerer, onEnd });
+	constructor({ renderer, scene, camera, rig, anchor, centerer, lighting, onEnd }) {
+		Object.assign(this, { renderer, scene, camera, rig, anchor, centerer, lighting, onEnd });
 		this.model = null; // { group, layers, bounds, observer, skyColor }
 		this.session = null;
 		this.sessionMode = null; // 'vr' | 'ar' (the session type)
@@ -100,6 +101,7 @@ export class XRExperience {
 		const room = new THREE.Group();
 		room.name = 'showroom';
 		const sky = new THREE.Mesh(gradientSphere(40, 0xb7cde0, 0xf5f7f9), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, depthWrite: false }));
+		this.showroomSky = sky;
 		const ground = new THREE.Mesh(new THREE.CircleGeometry(39, 48).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0xdfe3dc }));
 		ground.position.y = -0.02;
 		room.add(sky, ground);
@@ -137,6 +139,7 @@ export class XRExperience {
 		const SLAB = 0.03, GAP = 0.05, INSET = 0.025;
 		const W = w + 2 * PLINTH_MARGIN, D = d + 2 * PLINTH_MARGIN, H = PLINTH_HEIGHT;
 		this.plinthDistance = D / 2 + PLINTH_FRONT_GAP;
+		this.plinthSize = { W, D };
 		this.pedestal.position.set(0, 0, -this.plinthDistance);
 		this.gallery.position.set(0, 0, -this.plinthDistance);
 		const p = this.pedestal;
@@ -145,6 +148,7 @@ export class XRExperience {
 		const box = (bw, bh, bd, y, mat) => {
 			const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), mat);
 			m.position.y = y;
+			m.castShadow = m.receiveShadow = true; // the model's shadow falls on the table
 			p.add(m);
 		};
 		const M = this.plinthMaterials;
@@ -181,21 +185,25 @@ export class XRExperience {
 
 	/** One menu per mode, each with a controls card beside it; they live in the rig. */
 	buildMenus() {
-		const opts = (title) => ({ title, hint: HINT, width: 0.25, pxPerM: 1600 });
+		const opts = (title) => ({ title, hint: HINT, width: 0.42, pxPerM: 1600, columns: 2 });
 		this.menus = {
 			dollhouse: new Panel([
 				{ id: 'walk', label: 'Walk in' },
+				{ id: 'recentre', label: 'Recentre' },
+				{ id: 'light', label: 'Light: noon' },
+				{ id: 'shadows', label: 'Shadows: off' },
 				{ id: 'ceilings', label: 'Ceilings: on' },
 				{ id: 'view', label: 'View: VR' },
-				{ id: 'recentre', label: 'Recentre' },
 				{ id: 'exit', label: 'Exit VR' },
 			], opts('Dollhouse')),
 			walk: new Panel([
 				{ id: 'dollhouse', label: 'Dollhouse' },
 				{ id: 'ceilings', label: 'Ceilings: on' },
-				{ id: 'view', label: 'View: VR' },
+				{ id: 'light', label: 'Light: noon' },
+				{ id: 'shadows', label: 'Shadows: off' },
 				{ id: 'turn', label: 'Turn: 30°' },
 				{ id: 'height', label: 'Height: yours' },
+				{ id: 'view', label: 'View: VR' },
 				{ id: 'exit', label: 'Exit VR' },
 			], opts('Walking')),
 		};
@@ -269,7 +277,17 @@ export class XRExperience {
 		const size = model.bounds.getSize(new THREE.Vector3());
 		this.baseScale = DOLLHOUSE_SIZE / Math.max(size.x, size.z, 0.01);
 		this.buildPlinth(size.x * this.baseScale, size.z * this.baseScale);
-		recolourSphere(this.walkSky.geometry, 200, model.skyColor ?? 0xcce4fc, 0xffffff);
+		// Everything casts and receives shadows (used only when shadows are on),
+		// except the ground (nothing below it) and glass, so sun comes in
+		// through the windows.
+		for (const [name, layer] of Object.entries(model.layers)) {
+			for (const m of layer.children) {
+				const glass = [].concat(m.material).some((mat) => mat.transparent && mat.opacity < 0.9);
+				m.castShadow = name !== 'ground' && !glass;
+				m.receiveShadow = true;
+			}
+		}
+		this.updateSky();
 		this.updateLabels();
 	}
 
@@ -396,6 +414,12 @@ export class XRExperience {
 			p.setLabel('view', view);
 		}
 		this.menus.walk.setLabel('turn', `Turn: ${this.snapAngle}°`);
+		if (this.lighting) {
+			for (const p of Object.values(this.menus)) {
+				p.setLabel('light', `Light: ${this.lighting.time}`);
+				p.setLabel('shadows', `Shadows: ${this.lighting.shadows ? 'on' : 'off'}`);
+			}
+		}
 		this.menus.walk.setLabel('height', `Height: ${this.personHeight ? `${this.personHeight.toFixed(1)} m` : 'yours'}`);
 	}
 
@@ -528,9 +552,18 @@ export class XRExperience {
 				if (this.mode === 'walk') this.setLift(this.personLift());
 				this.updateLabels();
 				break;
+			case 'light': this.lighting?.nextTime(); this.updateLabels(); break;
+			case 'shadows': this.lighting?.setShadows(!this.lighting.shadows); this.updateLabels(); break;
 			case 'recentre': this.closeMenu(); this.recentre(); break;
 			case 'exit': this.closeMenu(); this.end(); break;
 		}
+	}
+
+	/** Recolours the gallery sky and the walk-mode sky for the time of day. */
+	updateSky() {
+		const { top, horizon } = this.lighting?.skyColors() ?? { top: this.model?.skyColor ?? 0xcce4fc, horizon: 0xf5f7f9 };
+		recolourSphere(this.showroomSky.geometry, 40, top, horizon);
+		recolourSphere(this.walkSky.geometry, 200, top, horizon);
 	}
 
 	// -----------------------------------------------------------------------
@@ -563,6 +596,7 @@ export class XRExperience {
 		this.anchor.rotation.set(0, this.stage.rotation.y + this.doll.yaw, 0);
 		this.anchor.scale.setScalar(this.baseScale * this.doll.zoom);
 		this.anchor.updateMatrixWorld(true);
+		this.lighting?.fit(); // the sun follows the model; shadows re-render
 	}
 
 	/** Moves the room, plinth and model in front of where the user now stands and looks. */
@@ -668,6 +702,10 @@ export class XRExperience {
 			const world = p.add(off);
 			this.doll.pos.copy(this.stage.worldToLocal(world));
 			this.doll.yaw = this.grab.aYaw0 + dy - this.stage.rotation.y;
+			// Never push it into the plinth (or, off the plinth, below the floor).
+			const { W, D } = this.plinthSize;
+			const onPlinth = this.vrView && Math.abs(this.doll.pos.x) < W / 2 && Math.abs(this.doll.pos.z + this.plinthDistance) < D / 2;
+			this.doll.pos.y = Math.max(this.doll.pos.y, onPlinth ? PLINTH_HEIGHT : 0);
 		}
 
 		// Thumbsticks: left/right rotates, up/down zooms (either controller).
@@ -707,6 +745,7 @@ export class XRExperience {
 		this.anchor.rotation.set(0, 0, 0);
 		this.anchor.scale.setScalar(1);
 		this.anchor.updateMatrixWorld(true);
+		this.lighting?.fit();
 	}
 
 	/** Enters 1:1 standing at a model-space floor point, optionally facing `yaw`. */
@@ -1012,6 +1051,7 @@ function buildGallery() {
 
 	// Floor: dark oak planks; a pale rug under the plinth.
 	const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: plankTexture() }));
+	floor.receiveShadow = true;
 	g.add(floor);
 	box(mats.rug, 5, 0.01, 4.2, 0, 0.005, 0.2);
 
@@ -1050,6 +1090,7 @@ function buildGallery() {
 
 	for (const [mat, geoms] of parts) {
 		const m = new THREE.Mesh(mergeGeometries(geoms), mat);
+		m.receiveShadow = true;
 		g.add(m);
 		for (const geo of geoms) geo.dispose();
 	}

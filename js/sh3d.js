@@ -86,6 +86,9 @@ export function parseHome(xmlText) {
 		wallHeight: num(H, 'wallHeight', 250),
 		groundColor: 0xa8a8a8,
 		skyColor: 0xcce4fc,
+		// Compass: plan north (radians, clockwise from plan "up") and latitude
+		// (radians), for the sun position. Values are radians in Home.xml.
+		compass: { northDirection: 0, latitude: Math.PI / 4 },
 		observer: null,
 		levels: new Map(),
 		pieces: [],
@@ -177,6 +180,9 @@ export function parseHome(xmlText) {
 				for (const c of n.children) {
 					if (c.name === 'observerCamera' && c.attrs.attribute === 'observerCamera') home.observer = readCamera(c.attrs);
 				}
+				break;
+			case 'compass':
+				home.compass = { northDirection: num(a, 'northDirection', 0), latitude: num(a, 'latitude', Math.PI / 4) };
 				break;
 			case 'observerCamera':
 				if (a.attribute === 'observerCamera') home.observer = readCamera(a);

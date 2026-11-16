@@ -10,15 +10,17 @@ const PAD = 24, GAP = 16, BTN_H = 96, TITLE_H = 72, HINT_H = 56;
 export class Panel {
 	/**
 	 * @param items  [{ id, label }]
-	 * @param opts   { title, hint (small text under the buttons), width (m), pxPerM (canvas pixels per metre) }
+	 * @param opts   { title, hint (small text under the buttons), width (m), pxPerM (canvas pixels per metre), columns }
 	 */
-	constructor(items, { title = '', hint = '', width = 0.36, pxPerM = PX_PER_M } = {}) {
+	constructor(items, { title = '', hint = '', width = 0.36, pxPerM = PX_PER_M, columns = 1 } = {}) {
 		this.items = items.map((i) => ({ ...i }));
+		this.columns = columns;
 		this.title = title;
 		this.hint = hint;
 		this.hover = null;
 		const wPx = Math.round(width * pxPerM);
-		const hPx = PAD * 2 + (title ? TITLE_H : 0) + items.length * BTN_H + (items.length - 1) * GAP + (hint ? HINT_H : 0);
+		const rows = Math.ceil(items.length / columns);
+		const hPx = PAD * 2 + (title ? TITLE_H : 0) + rows * BTN_H + (rows - 1) * GAP + (hint ? HINT_H : 0);
 		this.canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
 		if (this.canvas) { this.canvas.width = wPx; this.canvas.height = hPx; }
 		this.texture = this.canvas ? new THREE.CanvasTexture(this.canvas) : null;
@@ -34,12 +36,12 @@ export class Panel {
 
 	/** Button rectangles in canvas pixels. */
 	rects() {
-		let y = PAD + (this.title ? TITLE_H : 0);
-		return this.items.map((it) => {
-			const r = { id: it.id, x: PAD, y, w: this.size.w - 2 * PAD, h: BTN_H };
-			y += BTN_H + GAP;
-			return r;
-		});
+		const top = PAD + (this.title ? TITLE_H : 0);
+		const c = this.columns;
+		const w = (this.size.w - 2 * PAD - (c - 1) * GAP) / c;
+		return this.items.map((it, i) => ({
+			id: it.id, x: PAD + (i % c) * (w + GAP), y: top + Math.floor(i / c) * (BTN_H + GAP), w, h: BTN_H,
+		}));
 	}
 
 	draw() {

@@ -100,7 +100,10 @@ Resolve MTL and texture paths relative to the model's folder through a `LoadingM
 
 - After loading, bake world transforms and **merge geometry by material** (`BufferGeometryUtils.mergeGeometries`), deduplicating materials by colour, map and opacity. Aim for under 150 draw calls.
 - Build a `three-mesh-bvh` bounds tree on the merged meshes; all raycasts (pointer, teleport, floor-following) must use it.
-- Use `MeshLambertMaterial`, or Phong only where a model specifies shininess. One hemisphere light and one directional light, no shadows. Use foveation (`renderer.xr.setFoveation(1)`) and a framebuffer scale of 1.
+- Use `MeshLambertMaterial`, or Phong only where a model specifies shininess. One hemisphere light and one directional light. Use foveation (`renderer.xr.setFoveation(1)`) and a framebuffer scale of 1.
+- **Time of day** (added at the user's request): Morning, Noon, Sunset, Night, in the VR menu and the 2D Options, remembered. The sun direction comes from the home's compass (north direction and latitude, radians in Home.xml) on an equinox day: morning = solar 9:00, noon = solar noon, sunset = sun 5° above the horizon, night = a dim moon with a warm fill as if lamps were on. The sun turns with the dollhouse, so light always enters through the same windows. Noon without shadows keeps the original look. Skies (gallery, walk mode, 2D background) follow the time.
+- **Shadows** (optional, off by default; added at the user's request, replacing "no shadows"): one 2048 shadow map from the sun, rendered only when something changes (`shadowMap.autoUpdate = false`): loading, changing the time, or moving, turning or scaling the dollhouse. Walking costs only the shadow lookup. Glass (transparent, opacity < 0.9) does not cast, so sun comes in through windows; ceilings do, so with ceilings on, rooms are lit by the sun only through windows. With shadows on, the fill light is 0.9× and the sun 1.6×, so shadows read.
+- **Anti-aliasing:** MSAA on the XR framebuffer (`antialias: true`). No post-process or temporal anti-aliasing: the user found that it flickered in SketchUp Viewer. Texture shimmer is reduced with mipmaps and 8× anisotropic filtering instead.
 - Show the triangle and draw-call count on the 2D page. If the model exceeds about 1.5 M triangles, warn but still load.
 
 ## Experience and controls
@@ -117,9 +120,9 @@ Resolve MTL and texture paths relative to the model's folder through a `LoadingM
 - On entering XR (and when the headset is re-centred), the room and plinth are placed in front of where the user stands and looks, not at the floor origin.
 - The model is scaled to fit about 1.2 m across and sits on the plinth; it turns on the plinth, which stays still.
 - Thumbstick left/right rotates the model; up/down zooms it (×0.5 to ×4).
-- Grip plus moving the controller grabs and moves the model, keeping it upright (yaw only).
+- Grip plus moving the controller grabs and moves the model, keeping it upright (yaw only). It can be lifted but never pushed into the plinth (or, off the plinth, below the floor).
 - Each controller shows a laser ray. Pointing at the model shows a small person-height marker where the floor is; **trigger** enters 1:1 standing at that spot. Find the floor by casting downwards in model space and taking the first upward-facing hit.
-- Menu (canvas texture, laser-clickable), summoned rather than always visible (changed at the user's request; SketchUp's fixed waist bar got in the way): a living orb (glowing core in a faceted crystal with two orbiting rings; it breathes, turns, and glows blue when approached) floats over each hand. Pointing at one with the other hand's laser and pulling the trigger, touching it with the other controller, or pressing **A or X**, opens the menu in front of the head, with a controls card to its left, out of the main view (a drawing of both controllers and what each stick, trigger, grip and button does in this mode). It closes on a choice, on B/Y, or on a click elsewhere. It opens by itself once, on the first entry, so it is discovered. Dollhouse items: **Walk in** (at the observer camera position), **Ceilings on/off**, **View VR/passthrough**, **Recentre**, **Exit VR**.
+- Menu (canvas texture, laser-clickable), summoned rather than always visible (changed at the user's request; SketchUp's fixed waist bar got in the way): a living orb (glowing core in a faceted crystal with two orbiting rings; it breathes, turns, and glows blue when approached) floats over each hand. Pointing at one with the other hand's laser and pulling the trigger, touching it with the other controller, or pressing **A or X**, opens the menu in front of the head, with a controls card to its left, out of the main view (a drawing of both controllers and what each stick, trigger, grip and button does in this mode). It closes on a choice, on B/Y, or on a click elsewhere. It opens by itself once, on the first entry, so it is discovered. The menu has two columns. Dollhouse items: **Walk in** (at the observer camera position), **Recentre**, **Light** (time of day), **Shadows on/off**, **Ceilings on/off**, **View VR/passthrough**, **Exit VR**.
 
 **XR 1:1 walk mode**
 - The model is at real scale. Move a rig `Group` that contains the camera and controllers.
@@ -133,7 +136,7 @@ Resolve MTL and texture paths relative to the model's folder through a `LoadingM
   - Models without rooms (OBJ, GLB): anything except walls.
 - Person height: menu option Yours / 1.4 / 1.7 / 2.0 m (remembered). For a set height the rig is raised or lowered so the eyes are 11 cm below that height, measured when you enter walk mode or change the option.
 - **B or Y:** back to dollhouse (or closes the menu if it is open).
-- **A or X** (or an orb): toggle a menu in front of the head with Dollhouse, Ceilings on/off, View VR/passthrough, Turn 15°/30°/45°, Height, and Exit VR. Lasers are hidden while walking, except while the menu is open or a laser points at an orb.
+- **A or X** (or an orb): toggle a menu in front of the head with Dollhouse, Ceilings on/off, Light, Shadows on/off, Turn 15°/30°/45°, Height, View VR/passthrough, and Exit VR. Lasers are hidden while walking, except while the menu is open or a laser points at an orb.
 
 ## Project layout
 

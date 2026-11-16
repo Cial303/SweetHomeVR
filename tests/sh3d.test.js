@@ -147,3 +147,10 @@ test('OBJ faces mixing corners with and without (missing) normals get no NaN nor
 	assert.ok(n.array.every(Number.isFinite), 'finite normals');
 	for (let i = 0; i < n.count; i++) assert.ok(Math.abs(Math.abs(n.getY(i)) - 1) < 1e-6, 'flat face normal is vertical');
 });
+
+test('compass is read in radians (north direction and latitude)', () => {
+	const home = parseHome(`<home><compass x='0' y='0' diameter='100' northDirection='1.5707964' longitude='-0.001' latitude='0.8993254' timeZone='Europe/London'/></home>`);
+	assert.ok(Math.abs(home.compass.northDirection - Math.PI / 2) < 1e-6);
+	assert.ok(Math.abs(home.compass.latitude * 180 / Math.PI - 51.53) < 0.01);
+	assert.equal(parseHome('<home/>').compass.northDirection, 0);
+});
