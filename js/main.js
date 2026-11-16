@@ -94,6 +94,10 @@ function sceneStats(root) {
 	return { triangles: Math.round(triangles), drawCalls };
 }
 
+function escapeHtml(t) {
+	return String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
 function showStats() {
 	if (!current) { $('stats').textContent = ''; return; }
 	const { triangles, drawCalls } = sceneStats(current.root);
@@ -106,7 +110,7 @@ function showStats() {
 	} else if (current.unit) {
 		lines.push(`Units: ${current.unit}`);
 	}
-	const html = lines.map((l) => `<div>${l}</div>`);
+	const html = [`<div class="name">${escapeHtml(current.label || '')}</div>`, ...lines.map((l) => `<div>${l}</div>`)];
 	if (triangles > CONFIG.triangleWarning) html.push(`<div class="warn">Heavy model: over ${fmt(CONFIG.triangleWarning)} triangles may run slowly on Quest 2.</div>`);
 	$('stats').innerHTML = html.join('');
 	return { triangles, drawCalls };
@@ -143,7 +147,7 @@ async function load(files, label, source = { type: 'file' }) {
 			? { group: result.root, layers: Object.fromEntries(['main', 'walls', 'floors', 'ceilings', 'ground'].map((n) => [n, result.root.getObjectByName(n === 'main' ? 'furniture' : n) || new THREE.Group()])), stats: null }
 			: optimiseModel(result.root);
 		disposeCurrent();
-		current = { ...result, root: merged.group, layers: merged.layers, merged: merged.stats };
+		current = { ...result, label, root: merged.group, layers: merged.layers, merged: merged.stats };
 		centerer.add(current.root);
 		// Bottom-centre of the model (without the ground) at the origin.
 		const b = current.bounds;
@@ -156,7 +160,7 @@ async function load(files, label, source = { type: 'file' }) {
 		if (result.home) scene.background = new THREE.Color(result.home.skyColor);
 		frame('iso');
 		updateXRButtons();
-		setStatus(`${label}`);
+		setStatus(`Loaded ${label}.`);
 		showStats();
 		document.title = `${label} · Sweet Home VR`;
 		// Remember it for one-tap reopening (only once it opened successfully).

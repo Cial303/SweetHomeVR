@@ -106,7 +106,9 @@ await lookDown();
 await restRight();
 await restLeft();
 await enterVR.click();
-await frames(30);
+// Wait until the session is up: both controllers have orbs and the plinth was placed.
+await page.waitForFunction(() => { const x = window.__svr.xr; return x.mode && !x.pendingRecentre && x.orbs.every((o) => o.holder); }, null, { timeout: 8000 }).catch(() => {});
+await frames(10);
 let s = await state();
 check('enters the VR dollhouse', s.presenting && s.mode === 'dollhouse' && s.showroom, JSON.stringify({ mode: s.mode, session: s.session }));
 check('eyes lifted in the dollhouse', Math.abs(s.rig[1] - 0.25) < 1e-6, `rig y ${s.rig[1]}`);
@@ -240,6 +242,18 @@ await restRight();
 await frames(5);
 await shot('teleported');
 
+// Hold a trigger, aim behind you (where you came from), release: teleport.
+await aim('right', R, [0.25, 0, 0.8]); await frames(3);
+h0 = (await state()).head;
+await button('right', 'trigger', 1); await frames(8);
+s = await state();
+check('trigger shows the teleport arc', s.arc && s.valid === true, JSON.stringify({ arc: s.arc, ring: s.ring, valid: s.valid }));
+const land2 = s.ring;
+await button('right', 'trigger', 0); await frames(25);
+s = await state();
+check('trigger release teleports', land2 && Math.hypot(s.head[0] - land2[0], s.head[2] - land2[2]) < 0.05, `moved ${Math.hypot(s.head[0] - h0[0], s.head[2] - h0[2]).toFixed(2)} m`);
+await restRight(); await frames(3);
+
 // Furniture is not a floor: find a furniture top, check the arc flies
 // through it to the floor below, and that standing there uses that floor.
 s = await page.evaluate(async () => {
@@ -283,15 +297,15 @@ s = await state();
 const walked = Math.hypot(s.head[0] - h0[0], s.head[2] - h0[2]);
 check('left stick walks (about 0.75 m/s)', walked > 0.2 && walked < 1.0, `${walked.toFixed(2)} m`);
 
-// Hold a trigger and pull the hand back: you move forward.
+// Hold a grip and pull the hand back: you move forward.
 h0 = s.head;
 await aim('right', [0.2, 1.1, -0.5], [0.2, 1.1, -1.5]); await frames(3);
-await button('right', 'trigger', 1); await frames(3);
+await button('right', 'squeeze', 1); await frames(3);
 for (let i = 1; i <= 5; i++) { await aim('right', [0.2, 1.1, -0.5 + i * 0.06], [0.2, 1.1, -1.5]); await frames(2); }
-await button('right', 'trigger', 0); await frames(3);
+await button('right', 'squeeze', 0); await frames(3);
 s = await state();
 const pulled = Math.hypot(s.head[0] - h0[0], s.head[2] - h0[2]);
-check('trigger pull moves you', pulled > 0.2 && pulled < 0.4, `${pulled.toFixed(2)} m`);
+check('grip pull moves you', pulled > 0.2 && pulled < 0.4, `${pulled.toFixed(2)} m`);
 await restRight();
 
 // Right stick right: one snap turn.

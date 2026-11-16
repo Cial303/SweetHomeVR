@@ -125,8 +125,8 @@ Resolve MTL and texture paths relative to the model's folder through a `LoadingM
 - The model is at real scale. Move a rig `Group` that contains the camera and controllers.
 - Left stick: smooth locomotion relative to head direction, about 0.75 m/s (halved at the user's request).
 - Right stick left/right: snap turn 15°, 30° or 45° (menu option, remembered; 30° by default).
-- Right stick forward: show a **parabolic teleport arc** with a landing ring. Walls always stop it (red). It is valid (blue) on a walkable surface (see below) with normal.y > 0.7. In a one-level home it passes through furniture to the floor. Release to teleport, with a short fade.
-- Holding either trigger grabs the space: moving the hand pulls the user along horizontally (changed at the user's request from trigger-to-teleport). Both hands average.
+- Right stick forward, or holding either trigger: show a **parabolic teleport arc** with a landing ring. Walls always stop it (red). It is valid (blue) on a walkable surface (see below) with normal.y > 0.7. In a one-level home it passes through furniture to the floor. Release to teleport, with a short fade.
+- Holding either **grip** (the button on the side of the handle) grabs the space: moving the hand pulls the user along horizontally (added at the user's request). Both hands average.
 - Floor following: each frame, cast down from 0.6 m above the feet. If a walkable surface is within ±0.6 m, adopt its height. Walls don't block movement. Walkable (decided with the user):
   - **One level** (one distinct level elevation, or no levels): room floors and the ground only. You stay on the floor and walk through beds, tables and sofas.
   - **More than one level:** anything except walls, so staircases (which are furniture) work, at the cost of stepping onto low furniture.
@@ -167,6 +167,7 @@ README.md         how to host, use and update
   2. XR dollhouse
   3. Walk mode
   4. Dropbox and recents
-  5. Performance pass
+  5. Performance pass and refinements. Requested by the user so far:
+     - In the VR menu or controls card, a reminder of how to take a screenshot of the view (dollhouse, walk, VR or passthrough) with the Quest's own (Horizon OS) screenshot feature.
 - Keep the code plain and commented. No frameworks beyond three.js.
 - When unsure about a Sweet Home 3D detail, check the official source (`HomeXMLExporter`, `ModelManager`, `Wall3D`, `Room3D` in the Sweet Home 3D sources) rather than guessing.

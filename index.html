@@ -58,12 +58,17 @@
 		#file-input { display: none; }
 		#status { margin-top: 12px; min-height: 1.4em; color: var(--muted); }
 		#status.error { color: var(--warn); }
-		#stats { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
-		#stats .warn { color: var(--warn); }
+		/* Over the 3D view (a light sky), so dark text in both colour schemes. */
+		#stats { position: fixed; top: 16px; right: 16px; max-width: min(420px, calc(100vw - 390px)); text-align: right;
+			font-size: 13px; line-height: 1.5; color: #1d2329; font-variant-numeric: tabular-nums; pointer-events: none;
+			text-shadow: 0 0 3px rgba(255,255,255,.9), 0 0 8px rgba(255,255,255,.6); }
+		#stats .warn { color: #b3261e; }
+		#stats .name { font-weight: 600; font-size: 14px; }
+		@media (max-width: 720px) { #stats { top: auto; bottom: 12px; max-width: calc(100vw - 32px); } }
 		#xr-section:has(#xr-buttons:empty) { display: none; }
-		button.xr { background: var(--xr); border-color: var(--xr); color: var(--xr-text); font-weight: 600; padding: 12px; font-size: 16px; }
+		button.xr { background: var(--xr); border-color: var(--xr); color: var(--xr-text); font-weight: 700; padding: 15px 12px; font-size: 18px; border-radius: 10px; }
 		button.xr:hover { filter: brightness(1.1); border-color: var(--xr); }
-		button.xr svg { width: 20px; height: 20px; vertical-align: -4px; margin-right: 6px; }
+		button.xr svg { width: 26px; height: 26px; vertical-align: -7px; margin-right: 8px; }
 		details { margin-top: 10px; }
 		summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 		#recent { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
@@ -95,11 +100,6 @@
 			<h1>Sweet Home <span>VR</span></h1>
 			<button id="collapse" title="Hide panel" aria-label="Hide panel">–</button>
 		</header>
-
-		<section id="xr-section">
-			<h2>View in headset</h2>
-			<div class="row" id="xr-buttons"></div>
-		</section>
 
 		<section id="recent-section" hidden>
 			<h2>Recent</h2>
@@ -138,8 +138,16 @@
 		</details>
 
 		<div id="status"></div>
-		<div id="stats"></div>
+
+		<!-- Load first, then go into the headset. -->
+		<section id="xr-section">
+			<h2>View in headset</h2>
+			<div class="row" id="xr-buttons"></div>
+		</section>
 	</div>
+
+	<!-- Technical details of the open model, over the top right of the view. -->
+	<div id="stats" aria-live="polite"></div>
 
 	<script type="module" src="./js/main.js"></script>
 </body>

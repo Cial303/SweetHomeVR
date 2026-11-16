@@ -4,8 +4,8 @@
 //              over passthrough (AR view): thumbstick rotate/zoom, grip to
 //              move, laser + trigger to jump in at 1:1.
 //   walk       the home at 1:1: left stick walks, right stick snap-turns,
-//              right stick forward aims a teleport arc, a held trigger grabs
-//              the space so you can pull yourself along. In a one-level home
+//              right stick forward or a held trigger aims a teleport arc, a
+//              held grip grabs the space so you can pull yourself along. In a one-level home
 //              you stay on the floor and walk through furniture; with more
 //              levels you can stand on anything, so stairs work. B or Y goes back.
 //
@@ -212,7 +212,8 @@ export class XRExperience {
 			walk: new ControlsCard('Controls: walking', {
 				left: [
 					{ kind: 'stick', key: 'Stick', text: 'Walk where you look' },
-					{ kind: 'trigger', key: 'Trigger', text: 'Hold and pull: move' },
+					{ kind: 'trigger', key: 'Trigger', text: 'Hold, aim, release: teleport' },
+					{ kind: 'grip', key: 'Grip', text: 'Hold and pull: move' },
 					{ kind: 'button', key: 'X', text: 'Menu' },
 					{ kind: 'button', key: 'Y', text: 'Back to the dollhouse' },
 					{ kind: 'orb', key: 'Orb', text: 'Point or touch: menu' },
@@ -220,7 +221,8 @@ export class XRExperience {
 				right: [
 					{ kind: 'stick', key: 'Stick ↔', text: 'Turn' },
 					{ kind: 'stick', key: 'Stick ↑', text: 'Aim, release: teleport' },
-					{ kind: 'trigger', key: 'Trigger', text: 'Hold and pull: move' },
+					{ kind: 'trigger', key: 'Trigger', text: 'Hold, aim, release: teleport' },
+					{ kind: 'grip', key: 'Grip', text: 'Hold and pull: move' },
 					{ kind: 'button', key: 'A', text: 'Menu' },
 					{ kind: 'button', key: 'B', text: 'Back to the dollhouse' },
 					{ kind: 'orb', key: 'Orb', text: 'Point or touch: menu' },
@@ -823,14 +825,19 @@ export class XRExperience {
 		const left = this.input.hands.left, right = this.input.hands.right;
 		const t = this.targets();
 
-		// Teleport: push the right stick forward and aim; release to go.
+		// Teleport: push the right stick forward, or hold a trigger, and aim;
+		// release to go.
 		if (!this.tele && !this.menu && !this.fade) {
 			const rs = right?.state.stick;
-			if (rs && rs.y < -0.6 && Math.abs(rs.y) > Math.abs(rs.x)) this.tele = { c: right };
+			if (rs && rs.y < -0.6 && Math.abs(rs.y) > Math.abs(rs.x)) this.tele = { c: right, via: 'stick' };
+			else {
+				const c = this.input.active().find((c) => c.state.down.trigger && !onUI.has(c));
+				if (c) this.tele = { c, via: 'trigger' };
+			}
 		}
 		if (this.tele) {
-			const { c } = this.tele;
-			if (!c.source || c.state.stick.length() < 0.3) {
+			const { c, via } = this.tele;
+			if (!c.source || (via === 'stick' ? c.state.stick.length() < 0.3 : !c.state.trigger)) {
 				const r = this.tele.result;
 				this.tele = null;
 				this.arc.hide();
@@ -847,7 +854,7 @@ export class XRExperience {
 		}
 
 		// Right stick left/right: snap turn (re-arms when the stick centres).
-		if (right && this.tele?.c !== right) {
+		if (right && !(this.tele?.c === right && this.tele.via === 'stick')) {
 			const x = right.state.stick.x;
 			if (this.snapReady && Math.abs(x) > 0.7 && Math.abs(x) > Math.abs(right.state.stick.y)) {
 				this.turn(-Math.sign(x) * THREE.MathUtils.degToRad(this.snapAngle));
@@ -857,13 +864,13 @@ export class XRExperience {
 			}
 		}
 
-		// Triggers: grab the space and pull yourself along (horizontally;
-		// the floor following keeps you on the floor).
+		// Grips: grab the space and pull yourself along (horizontally; the
+		// floor following keeps you on the floor).
 		const pull = new THREE.Vector3();
 		let pulling = 0;
 		for (const c of this.input.active()) {
-			if (c.state.down.trigger && !onUI.has(c) && !this.menu) c.pull = c.grip.position.clone();
-			if (!c.state.trigger) c.pull = null;
+			if (c.state.down.grip && !this.menu) c.pull = c.grip.position.clone();
+			if (!c.state.grip) c.pull = null;
 			if (c.pull) {
 				pull.add(c.pull.clone().sub(c.grip.position));
 				c.pull.copy(c.grip.position);

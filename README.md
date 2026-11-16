@@ -9,7 +9,7 @@ It runs in the Meta Quest Browser: no app store, no developer mode, no sideloadi
 ## Using it
 
 1. Open the app's URL (GitHub Pages) in a browser.
-2. **Open from Dropbox** (browse your Dropbox and tap the file), **Open file**, or paste a link (e.g. a Dropbox shared link) and press **Open from link**.
+2. **Open from Dropbox** (browse your Dropbox and tap the file), **Open file**, or paste a link (e.g. a Dropbox shared link) and press **Open from link**. Then press **Enter VR** below. The model's details show at the top right.
 3. Drag to orbit, scroll or pinch to zoom, right-drag to pan.
 4. Next time, tap the model under **Recent**: the last 5 models are kept in the browser, so reopening one needs no download. For a model opened from a link, **↻** downloads the latest version from the same link (handy after editing the home on the Mac). The last link you used is also remembered in the link box.
 
@@ -43,9 +43,9 @@ Press **Enter VR** once a model is open. In the headset, the menu switches betwe
 
 **Inside, at 1:1**
 - **Left stick** walks where you look. Walls don't stop you. In a one-level home you stay on the floor and walk through furniture; in a home with several levels you can step onto anything, so stairs work.
-- **Hold a trigger** and move your hand to pull yourself along, as if grabbing the room.
+- **Hold a grip** (the button on the side of the handle) and move your hand to pull yourself along, as if grabbing the room.
 - **Right stick** left/right turns in steps (15°, 30° or 45°, set in the menu).
-- **Right stick forward** and aim: a blue ring shows where you'll land (red on a wall). Let go to jump there.
+- **Right stick forward**, or **hold a trigger**, and aim: a blue ring shows where you'll land (red on a wall). Let go to jump there.
 - **B** or **Y** goes back to the dollhouse.
 - Menu: **Dollhouse**, **Ceilings on/off**, **View**, **Turn**, **Height** (yours, 1.4, 1.7 or 2.0 m), **Exit VR**.
 

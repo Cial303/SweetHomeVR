@@ -118,7 +118,7 @@ function roundRect(ctx, x, y, w, h, r) {
 // the menu.
 // ---------------------------------------------------------------------------
 
-const CARD_W = 1200, CARD_H = 1060; // canvas pixels
+const CARD_W = 1200, CARD_H = 1140; // canvas pixels (room for 7 rows)
 const FONT = '-apple-system, "Segoe UI", Roboto, sans-serif';
 const BADGE = {
 	stick: { fill: '#5d6873', text: '#fff' },
