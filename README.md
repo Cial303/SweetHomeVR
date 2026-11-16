@@ -10,7 +10,7 @@ It runs in the Meta Quest Browser: no app store, no developer mode, no sideloadi
 
 1. Open the app's URL (GitHub Pages) in a browser.
 2. **Open file**, or paste a link (e.g. a Dropbox shared link) and press **Open from link**. No file to hand? **Try the example home**, a small two-storey house made for this viewer. Then press **Enter VR** below. The model's details show at the top right.
-3. Under **Display**, choose the **Light** (morning by default, noon, sunset or night) and switch **Shadows** on or off.
+3. The bar along the bottom is always on screen: choose the **Light** (morning by default, noon, sunset or night), switch **Shadows** and **Depth shading** on or off, and press **Enter VR**. The files card at the top left can be hidden with **–**.
 4. Drag to orbit, scroll or pinch to zoom, right-drag to pan.
 5. Next time, tap the model under **Recent**: the last 5 models are kept in the browser, so reopening one needs no download. For a model opened from a link, **↻** downloads the latest version from the same link (handy after editing the home on the Mac). The last link you used is also remembered in the link box.
 
@@ -51,7 +51,17 @@ Press **Enter VR** once a model is open. In the headset, the menu switches betwe
 - **B** or **Y** goes back to the dollhouse.
 - Menu: **Dollhouse**, **Ceilings on/off**, **Light**, **Shadows**, **Turn**, **Height** (yours, 1.4, 1.7 or 2.0 m), **View**, **Exit VR**.
 
-**Light and shadows:** the sun comes from the right direction for your home, using the compass in the Sweet Home 3D file. Shadows are off by default; when on, they are computed once (not every frame), so walking stays smooth. With ceilings on, sunlight only enters through the windows; turn ceilings off to let it in from above. At sunset and at night the home's lamps glow. The same Light and Shadows settings are under **Display** on the 2D page; the light starts as morning.
+**Light and shadows:** the sun comes from the right direction for your home, using the compass in the Sweet Home 3D file. Shadows are off by default; when on, they are computed once (not every frame), so walking stays smooth. With ceilings on, sunlight only enters through the windows; turn ceilings off to let it in from above. At sunset and at night the home's lamps glow. The same Light and Shadows settings are in the bar at the bottom of the 2D page; the light starts as morning.
+
+**Depth shading** (headset only, off by default): soft dark gradients where walls, floors and ceilings meet and where furniture touches them, and a slightly different brightness for faces pointing different ways, so white walls don't melt into each other. Switch it on in the page's bottom bar or with **Depth** in the headset menu. It is prepared once per model in the background (a few seconds; the menu shows a percentage) and costs nothing per frame afterwards.
+
+## Which headsets
+
+Built for and tested on a **Meta Quest 2**. It uses only standard WebXR, so:
+
+- **Quest 3, 3S and Pro** should work as they are, with colour passthrough and more speed. The scripted test passes with their emulated controller layouts, but nobody has tried the real devices yet.
+- **Quest 1** may work in VR only (it has no passthrough for web pages) with small homes: its processor is much slower, and Meta no longer updates its browser. Untested.
+- Other WebXR headsets with two controllers that have a thumbstick, trigger, grip and two buttons should also work; hand tracking alone is not supported.
 
 ## What gets shown from a Sweet Home 3D file
 
@@ -95,7 +105,7 @@ npm run example        # rebuild examples/example-home.sh3d (only after editing 
 npm test               # parser, lighting and safety tests (Node)
 npx playwright install chromium
 npm run shots          # screenshots of each fixture into test-output/
-npm run xr-test        # scripted VR session on an emulated Quest 2 (Meta's IWER)
+npm run xr-test        # scripted VR session on an emulated Quest 2 (Meta's IWER); XR_DEVICE=metaQuest3 for others
 npm run serve          # http://localhost:8123/
 ```
 
@@ -111,6 +121,7 @@ js/xr.js          VR/AR session: gallery and dollhouse, walk mode, menu orbs
 js/xr-input.js    controllers, lasers, buttons, thumbsticks, teleport arc
 js/panel.js       canvas-texture VR menu and controls card
 js/lighting.js    time of day (sun from the home's compass) and shadows
+js/depth.js       depth shading for the headset: corner gradients baked per vertex
 js/optimise.js    merge geometry by material, BVH for raycasts
 js/storage.js     recent models (IndexedDB)
 js/links.js       which links may be downloaded; Dropbox link rewrite (no DOM)

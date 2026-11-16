@@ -25,14 +25,18 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-// Install the emulated Quest 2 before the app runs.
+// Install the emulated headset before the app runs: a Quest 2 by default, or
+// XR_DEVICE=oculusQuest1 | metaQuest3 | metaQuestPro to check the others'
+// controller layouts (this says nothing about their speed).
+const DEVICE = process.env.XR_DEVICE || 'metaQuest2';
 await page.addInitScript({ path: path.join(root, 'node_modules/iwer/build/iwer.min.js') });
-await page.addInitScript(() => {
-	const d = new IWER.XRDevice(IWER.metaQuest2);
+await page.addInitScript((name) => {
+	if (!IWER[name]) throw new Error(`Unknown device ${name}`);
+	const d = new IWER.XRDevice(IWER[name]);
 	d.stereoEnabled = false; // one view, so screenshots are easy to read
 	d.installRuntime({ forceInstall: true });
 	window.__device = d;
-});
+}, DEVICE);
 
 let step = 0;
 const results = [];
@@ -95,7 +99,7 @@ const clickMenu = async (id) => { await aimW('right', R, await menuPoint(id)); a
 /** World point on top of the model (plinth centre, slightly forward). */
 const modelTop = () => page.evaluate(() => { const x = window.__svr.xr; return x.stage.localToWorld(x.doll.pos.clone().add(new (x.doll.pos.constructor)(0.05, 0.02, 0.25))).toArray(); });
 
-console.log(`Fixture: ${fixture}`);
+console.log(`Fixture: ${fixture}   Device: ${DEVICE}`);
 await page.goto(`http://localhost:8129/?test&model=${encodeURIComponent(fixture)}`);
 check('model loads', await page.evaluate(() => window.__svr.ready));
 const enterVR = page.locator('#xr-buttons button', { hasText: 'Enter VR' });
@@ -432,15 +436,27 @@ check('Figure can be switched off', !(await state()).figure);
 await clickMenu('figure');
 await frames(3);
 check('and on again', (await state()).figure);
+// Depth shading: switched on from the menu, prepared in the background, headset only.
+const depth = () => page.evaluate(() => { const d = window.__svr.depth, x = window.__svr.xr; return { on: d.enabled, state: d.state, uniform: d.uniform.value, label: x.menus.dollhouse.items.find((i) => i.id === 'depth').label }; });
+check('Depth starts off', (await depth()).label === 'Depth: off' && (await depth()).uniform === 0);
+await clickMenu('depth');
+await page.waitForFunction(() => window.__svr.depth.state === 'ready', null, { timeout: 120000 }).catch(() => {});
+await frames(5);
+let dp = await depth();
+check('Depth shading is prepared and shown in the headset', dp.on && dp.state === 'ready' && dp.uniform === 1 && dp.label === 'Depth: on', JSON.stringify(dp));
 await clickMenu('levels'); // ground floor only, then walk in: every storey comes back
 await clickMenu('walk');
 await frames(15);
 lv = await storeys();
 s = await state();
 check('walking shows every storey and hides the figure', s.mode === 'walk' && lv.hidden.length === 0 && !s.figure, JSON.stringify({ mode: s.mode, hidden: lv.hidden, figure: s.figure }));
-await shot('example-walk');
+await shot('example-walk-depth');
 await page.evaluate(() => window.__svr.xr.end());
 await frames(5);
+dp = await depth();
+check('Depth shading is not applied on the 2D page', dp.on && dp.uniform === 0, JSON.stringify(dp));
+check('the page switch follows the headset menu', await page.isChecked('#depth') && /ready/.test(await page.textContent('#depth-note')));
+await page.click('label.switch:has(#depth)'); // back off, as the next run expects
 
 check('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 console.log(results.join('\n'));

@@ -9,6 +9,7 @@ import { openFiles, UserError } from './formats.js';
 import { optimiseModel } from './optimise.js';
 import { XRExperience } from './xr.js';
 import { Lighting, TIMES } from './lighting.js';
+import { DepthShading } from './depth.js';
 import { checkLink, fileNameOf } from './links.js';
 import { listRecents, getRecent, addRecent, removeRecent, getLastLink, setLastLink } from './storage.js';
 
@@ -68,7 +69,12 @@ scene.add(anchor);
 
 let current = null; // result of openFiles(), with root replaced by the merged model
 
-const xr = new XRExperience({ renderer, scene, camera, rig, anchor, centerer, lighting, onEnd: () => {
+// Depth shading (corner gradients) for the headset; prepared in the background.
+const depth = new DepthShading();
+const DEPTH_KEY = 'svr.depth';
+depth.setEnabled(safeGet(DEPTH_KEY) === '1');
+
+const xr = new XRExperience({ renderer, scene, camera, rig, anchor, centerer, lighting, depth, onEnd: () => {
 	controls.enabled = true;
 	scene.background = lighting.background();
 	lighting.fit();
@@ -84,11 +90,22 @@ lighting.onChange = () => {
 	document.body.classList.toggle('dark-sky', lighting.time === 'night'); // light text over the night sky
 	xr.updateSky();
 	xr.updateLabels();
-	$('time').value = lighting.time;
+	for (const b of $('time').querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.value === lighting.time));
 	$('shadows').checked = lighting.shadows;
 	invalidate();
 };
 lighting.onChange();
+
+// Depth shading: remember the switch, and say how far the preparation is.
+depth.onChange = () => {
+	safeSet(DEPTH_KEY, depth.enabled ? '1' : '0');
+	$('depth').checked = depth.enabled;
+	$('depth-note').textContent = !depth.enabled || depth.state === 'idle' ? 'in VR only'
+		: depth.state === 'baking' ? `preparing… ${Math.round(depth.progress * 100)}%` : 'ready for VR';
+	xr.updateLabels();
+	if (depth.state === 'ready') { showStats(); invalidate(); }
+};
+depth.onChange();
 
 window.addEventListener('resize', () => {
 	if (renderer.xr.isPresenting) return;
@@ -104,9 +121,11 @@ renderer.setAnimationLoop((time) => {
 	const dt = Math.min(timer.getDelta(), 0.1);
 	if (renderer.xr.isPresenting) {
 		xr.update(dt);
+		depth.tick(4); // a little per frame, so the headset stays smooth
 		renderer.render(scene, camera);
 		return;
 	}
+	depth.tick(12);
 	controls.update(); // fires "change" while the camera is still moving
 	if (!dirty && time - lastDraw < IDLE_REDRAW_MS) return;
 	dirty = false;
@@ -206,6 +225,7 @@ async function load(files, label, source = { type: 'file' }) {
 		const lamps = merged.stats ? lighting.setLamps(result.lamps) : lighting.setLamps(null);
 		if (lamps) current.root.add(lamps);
 		xr.setModel({ group: current.root, layers: current.layers, lamps, storeys: result.storeys ?? 1, bounds: current.bounds, observer: current.observer, skyColor: result.home?.skyColor, multiLevel: elevations.size > 1 });
+		depth.setModel(merged.stats ? current.layers : null); // (not in the ?nomerge debug view)
 		prepareTextures(current.root);
 		lighting.setHome({ compass: result.home?.compass, skyColor: result.home?.skyColor });
 		lighting.setSubject(centerer, current.bounds);
@@ -213,6 +233,8 @@ async function load(files, label, source = { type: 'file' }) {
 		invalidate();
 		// Links to other websites written inside a model are never followed.
 		const blocked = current.store?.blockedLinks() ?? 0;
+		// Small windows: get the files card out of the way of the model.
+		if (window.matchMedia('(max-width: 760px), (max-height: 520px)').matches) setCollapsed(true);
 		setStatus(`Loaded ${label}.${blocked ? ` ${blocked} link${blocked > 1 ? 's' : ''} to other websites inside the file ${blocked > 1 ? 'were' : 'was'} ignored.` : ''}`);
 		showStats();
 		// Once the textures have arrived: shrink any oversized ones and free
@@ -417,13 +439,14 @@ async function renderRecents() {
 	$('recent-section').hidden = items.length === 0;
 	list.replaceChildren(...items.map((r) => {
 		const li = document.createElement('li');
+		if (r.source.type === 'link') li.className = 'with-refresh';
 		const open = document.createElement('button');
 		open.className = 'recent-open';
-		open.title = 'Open the saved copy';
 		const mb = (r.size / 1048576).toFixed(r.size < 10485760 ? 1 : 0);
 		const kind = { link: 'Link', dropbox: 'Dropbox', file: 'File' }[r.source.type] || 'File';
 		const span = (cls, text) => { const e = document.createElement('span'); e.className = cls; e.textContent = text; return e; };
-		open.append(span('recent-name', r.name), span('recent-meta', `${kind} · ${mb} MB · ${ago(r.date)}`));
+		open.title = `${r.name}: ${kind.toLowerCase()}, ${mb} MB, ${ago(r.date)}. Opens the saved copy.`;
+		open.append(span('recent-name', r.name), span('recent-meta', ago(r.date)));
 		open.addEventListener('click', async () => {
 			const rec = await getRecent(r.id);
 			if (!rec) { setStatus('That saved copy is no longer available.', true); renderRecents(); return; }
@@ -455,11 +478,16 @@ async function renderRecents() {
 // ---------------------------------------------------------------------------
 
 let xrSupport = { vr: false, ar: false };
+let xrChecked = false; // the browser has answered whether it supports VR
 
 function updateXRButtons() {
 	const box = $('xr-buttons');
 	box.replaceChildren();
-	if (!xrSupport.vr && !xrSupport.ar) return;
+	if (!xrSupport.vr && !xrSupport.ar) {
+		// A desktop or phone browser: say where the headset view is.
+		if (xrChecked) { const note = document.createElement('span'); note.className = 'hint'; note.textContent = 'To enter VR, open this page in the Meta Quest Browser.'; box.append(note); }
+		return;
+	}
 	// One button: an AR-capable session can switch between VR and passthrough
 	// from the in-headset menu.
 	const kind = xrSupport.ar ? 'ar' : 'vr';
@@ -483,7 +511,7 @@ function updateXRButtons() {
 	box.append(b);
 }
 
-XRExperience.supported().then((s) => { xrSupport = s; updateXRButtons(); });
+XRExperience.supported().then((s) => { xrSupport = s; xrChecked = true; updateXRButtons(); });
 
 // ---------------------------------------------------------------------------
 // UI wiring
@@ -514,16 +542,38 @@ $('open-link').addEventListener('click', () => {
 	const url = $('link-input').value;
 	if (url.trim()) loadUrl(url).catch(() => {});
 });
-$('time').addEventListener('change', (e) => lighting.setTime(e.target.value));
+$('time').addEventListener('click', (e) => { const v = e.target.closest('button')?.dataset.value; if (v) lighting.setTime(v); });
 $('shadows').addEventListener('change', (e) => lighting.setShadows(e.target.checked));
+$('depth').addEventListener('change', (e) => depth.setEnabled(e.target.checked));
 $('link-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('open-link').click(); });
 $('units').value = CONFIG.defaultObjUnits;
 $('link-input').value = getLastLink();
 renderRecents();
 
-$('collapse').addEventListener('click', () => {
-	const c = $('panel').classList.toggle('collapsed');
+function setCollapsed(c) {
+	$('panel').classList.toggle('collapsed', c);
 	$('collapse').textContent = c ? '+' : '–';
+	$('collapse').setAttribute('aria-expanded', String(!c));
+	$('collapse').title = c ? 'Show this panel' : 'Hide this panel';
+}
+$('collapse').addEventListener('click', () => setCollapsed(!$('panel').classList.contains('collapsed')));
+
+// The files card stops above the bottom bar, whatever height the bar wraps to.
+const barHeight = () => document.documentElement.style.setProperty('--bar-h', `${$('bar').offsetHeight}px`);
+if ('ResizeObserver' in window) new ResizeObserver(barHeight).observe($('bar'));
+barHeight();
+
+// Dropping files anywhere on the page opens them (desktop browsers).
+window.addEventListener('dragover', (e) => { e.preventDefault(); document.body.classList.add('dropping'); });
+window.addEventListener('dragleave', () => document.body.classList.remove('dropping'));
+window.addEventListener('drop', async (e) => {
+	e.preventDefault();
+	document.body.classList.remove('dropping');
+	const picked = [...(e.dataTransfer?.files || [])];
+	if (!picked.length) return;
+	const files = await Promise.all(picked.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }))).catch(() => null);
+	if (!files) { setStatus('Those files could not be read.', true); return; }
+	load(files, picked.length === 1 ? picked[0].name : `${picked.length} files`, { type: 'file' }).catch(() => {});
 });
 
 // Offline use and clean updates (sw.js). Only on the real site (https), or
@@ -564,6 +614,7 @@ if (initial) {
 // Test hooks for scripts/screenshots.js
 window.__svr = {
 	lighting,
+	depth,
 	ready,
 	invalidate,
 	frame: (view) => { frame(view); controls.update(); renderer.render(scene, camera); },

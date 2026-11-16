@@ -27,6 +27,7 @@ js/optimise.js    merge-by-material and BVH
 js/xr-input.js    controllers, rays, thumbsticks, teleport arc, snap turn
 js/panel.js       canvas-texture VR menu and controls card
 js/lighting.js    time of day (sun from the compass) and on-demand shadows
+js/depth.js       depth shading (headset only): corner gradients baked per vertex, no post-process
 js/storage.js     IndexedDB recent files
 js/links.js       which links may be downloaded, Dropbox link rewrite (pure, Node-testable)
 sw.js             service worker: offline use and clean updates (network-first, cache fallback)

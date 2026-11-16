@@ -57,10 +57,11 @@ export class XRExperience {
 	/**
 	 * @param opts.renderer, opts.scene, opts.camera, opts.rig, opts.anchor, opts.centerer
 	 * @param opts.lighting  Lighting (time of day, shadows): the menu changes it
+	 * @param opts.depth     DepthShading (corner gradients, headset only): the menu switches it
 	 * @param opts.onEnd()  called after the session ends (2D page restores its view)
 	 */
-	constructor({ renderer, scene, camera, rig, anchor, centerer, lighting, onEnd }) {
-		Object.assign(this, { renderer, scene, camera, rig, anchor, centerer, lighting, onEnd });
+	constructor({ renderer, scene, camera, rig, anchor, centerer, lighting, depth, onEnd }) {
+		Object.assign(this, { renderer, scene, camera, rig, anchor, centerer, lighting, depth, onEnd });
 		this.model = null; // { group, layers, bounds, observer, skyColor }
 		this.session = null;
 		this.sessionMode = null; // 'vr' | 'ar' (the session type)
@@ -197,6 +198,7 @@ export class XRExperience {
 				{ id: 'recentre', label: 'Recentre' },
 				{ id: 'light', label: 'Light: morning' },
 				{ id: 'shadows', label: 'Shadows: off' },
+				{ id: 'depth', label: 'Depth: off' },
 				{ id: 'ceilings', label: 'Ceilings: on' },
 				{ id: 'levels', label: 'Levels: all' },
 				{ id: 'figure', label: 'Figure: on' },
@@ -208,6 +210,7 @@ export class XRExperience {
 				{ id: 'ceilings', label: 'Ceilings: on' },
 				{ id: 'light', label: 'Light: morning' },
 				{ id: 'shadows', label: 'Shadows: off' },
+				{ id: 'depth', label: 'Depth: off' },
 				{ id: 'turn', label: 'Turn: 30°' },
 				{ id: 'height', label: 'Height: yours' },
 				{ id: 'view', label: 'View: VR' },
@@ -343,6 +346,7 @@ export class XRExperience {
 		this.renderer.xr.setFoveation(1);
 		this.session = session;
 		this.sessionMode = kind;
+		this.depth?.setActive(true); // depth shading shows in the headset only
 		this.saved = { background: this.scene.background };
 		this.scene.background = null; // the sky spheres draw the VR view; null shows passthrough
 		session.addEventListener('end', () => this.handleEnd());
@@ -366,6 +370,7 @@ export class XRExperience {
 
 	handleEnd() {
 		this.session = null;
+		this.depth?.setActive(false);
 		this.mode = null;
 		this.grab = null;
 		this.tele = null;
@@ -473,6 +478,7 @@ export class XRExperience {
 			for (const p of Object.values(this.menus)) {
 				p.setLabel('light', `Light: ${this.lighting.time}`);
 				p.setLabel('shadows', `Shadows: ${this.lighting.shadows ? 'on' : 'off'}`);
+				if (this.depth) p.setLabel('depth', `Depth: ${this.depth.label()}`);
 			}
 		}
 		this.menus.walk.setLabel('height', `Height: ${this.personHeight ? `${this.personHeight.toFixed(1)} m` : 'yours'}`);
@@ -628,6 +634,7 @@ export class XRExperience {
 				break;
 			case 'light': this.lighting?.nextTime(); this.updateLabels(); break;
 			case 'shadows': this.lighting?.setShadows(!this.lighting.shadows); this.updateLabels(); break;
+			case 'depth': this.depth?.setEnabled(!this.depth.enabled); this.updateLabels(); break;
 			case 'recentre': this.closeMenu(); this.recentre(); break;
 			case 'exit': this.closeMenu(); this.end(); break;
 		}

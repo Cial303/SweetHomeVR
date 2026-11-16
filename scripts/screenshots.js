@@ -38,7 +38,7 @@ for (const fx of fixtures) {
 	// Let textures decode.
 	await page.waitForTimeout(1500);
 	console.log(`  loaded in ${Date.now() - t0} ms`, JSON.stringify(await page.evaluate(() => window.__svr.stats())));
-	await page.evaluate(() => document.getElementById('panel').classList.add('collapsed'));
+	await page.evaluate(() => { document.getElementById('panel').classList.add('collapsed'); document.getElementById('bar').hidden = true; });
 	for (const v of VIEWS) {
 		await page.evaluate((view) => window.__svr.frame(view), v);
 		await page.waitForTimeout(200);
