@@ -22,7 +22,7 @@ THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
-export const LAYERS = ['main', 'floors', 'ceilings', 'ground'];
+export const LAYERS = ['main', 'walls', 'floors', 'ceilings', 'ground', 'stairs'];
 
 /** Which layer an object of the loaded scene belongs to, from its top-level group name. */
 function layerOf(obj, root) {
@@ -32,6 +32,8 @@ function layerOf(obj, root) {
 		case 'floors': return 'floors';
 		case 'ceilings': return 'ceilings';
 		case 'ground': return 'ground';
+		case 'stairs': return 'stairs';
+		case 'walls': return 'walls';
 		default: return 'main';
 	}
 }
@@ -83,7 +85,7 @@ function flipWinding(g) {
 
 /**
  * Merges the loaded scene. `root` is the object returned by the loaders
- * (in metres). Returns { group, layers: { main, floors, ceilings, ground },
+ * (in metres). Returns { group, layers: { main (furniture, or a whole OBJ/GLB), walls, floors, ceilings, ground, stairs },
  * stats: { drawCalls, triangles, materials, sourceMeshes } }.
  */
 export function optimiseModel(root) {

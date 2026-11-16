@@ -10,20 +10,20 @@ const PAD = 24, GAP = 16, BTN_H = 96, TITLE_H = 72, HINT_H = 56;
 export class Panel {
 	/**
 	 * @param items  [{ id, label }]
-	 * @param opts   { title, hint (small text under the buttons), width (m) }
+	 * @param opts   { title, hint (small text under the buttons), width (m), pxPerM (canvas pixels per metre) }
 	 */
-	constructor(items, { title = '', hint = '', width = 0.36 } = {}) {
+	constructor(items, { title = '', hint = '', width = 0.36, pxPerM = PX_PER_M } = {}) {
 		this.items = items.map((i) => ({ ...i }));
 		this.title = title;
 		this.hint = hint;
 		this.hover = null;
-		const wPx = Math.round(width * PX_PER_M);
+		const wPx = Math.round(width * pxPerM);
 		const hPx = PAD * 2 + (title ? TITLE_H : 0) + items.length * BTN_H + (items.length - 1) * GAP + (hint ? HINT_H : 0);
 		this.canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
 		if (this.canvas) { this.canvas.width = wPx; this.canvas.height = hPx; }
 		this.texture = this.canvas ? new THREE.CanvasTexture(this.canvas) : null;
 		if (this.texture) { this.texture.colorSpace = THREE.SRGBColorSpace; this.texture.anisotropy = 4; }
-		const geo = new THREE.PlaneGeometry(width, hPx / PX_PER_M);
+		const geo = new THREE.PlaneGeometry(width, hPx / pxPerM);
 		const mat = new THREE.MeshBasicMaterial({ map: this.texture, transparent: true, toneMapped: false });
 		this.mesh = new THREE.Mesh(geo, mat);
 		this.mesh.name = 'panel';
@@ -63,7 +63,9 @@ export class Panel {
 			ctx.fillStyle = hot ? '#d9822b' : '#eef1f4';
 			ctx.fill();
 			ctx.fillStyle = hot ? '#ffffff' : '#1d2329';
-			ctx.font = '500 40px -apple-system, "Segoe UI", Roboto, sans-serif';
+			let px = 40; // shrink long labels to fit
+			do ctx.font = `500 ${px}px -apple-system, "Segoe UI", Roboto, sans-serif`;
+			while (ctx.measureText(it.label).width > r.w - 32 && --px > 24);
 			ctx.textAlign = 'center';
 			ctx.fillText(it.label, r.x + r.w / 2, r.y + r.h / 2 + 2);
 			ctx.textAlign = 'left';
@@ -108,4 +110,132 @@ function roundRect(ctx, x, y, w, h, r) {
 	ctx.arcTo(x, y + h, x, y, r);
 	ctx.arcTo(x, y, x + w, y, r);
 	ctx.closePath();
+}
+
+// ---------------------------------------------------------------------------
+// Controls card: a drawing of the two Quest controllers (top view) with what
+// each stick, trigger, grip and button does in the current mode. Shown beside
+// the menu.
+// ---------------------------------------------------------------------------
+
+const CARD_W = 1200, CARD_H = 1060; // canvas pixels
+const FONT = '-apple-system, "Segoe UI", Roboto, sans-serif';
+const BADGE = {
+	stick: { fill: '#5d6873', text: '#fff' },
+	trigger: { fill: '#3d6fd8', text: '#fff' },
+	grip: { fill: '#2f9e6a', text: '#fff' },
+	button: { fill: '#1d2329', text: '#fff' },
+	orb: { fill: '#d9822b', text: '#fff' },
+};
+
+export class ControlsCard {
+	/**
+	 * @param title  e.g. 'Controls: dollhouse'
+	 * @param hands  { left: [{ kind, key, text }], right: [...] }
+	 *               kind: stick | trigger | grip | button | orb; key: badge text
+	 */
+	constructor(title, hands, { width = 0.46 } = {}) {
+		this.title = title;
+		this.hands = hands;
+		const w = CARD_W, h = CARD_H, height = width * h / w;
+		this.size = { w, h };
+		this.canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+		if (this.canvas) { this.canvas.width = w; this.canvas.height = h; }
+		this.texture = this.canvas ? new THREE.CanvasTexture(this.canvas) : null;
+		if (this.texture) { this.texture.colorSpace = THREE.SRGBColorSpace; this.texture.anisotropy = 4; }
+		this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height),
+			new THREE.MeshBasicMaterial({ map: this.texture, transparent: true, toneMapped: false, depthTest: false }));
+		this.mesh.name = 'controls-card';
+		this.mesh.renderOrder = 10;
+		this.draw();
+	}
+
+	draw() {
+		if (!this.canvas) return;
+		const ctx = this.canvas.getContext('2d');
+		const { w, h } = this.size;
+		ctx.clearRect(0, 0, w, h);
+		roundRect(ctx, 0, 0, w, h, 48);
+		ctx.fillStyle = 'rgba(255,255,255,0.95)';
+		ctx.fill();
+		ctx.textBaseline = 'middle';
+		ctx.fillStyle = '#1d2329';
+		ctx.font = `600 52px ${FONT}`;
+		ctx.fillText(this.title, 48, 70);
+		const half = w / 2;
+		this.drawHand(ctx, 'left', 0, half);
+		this.drawHand(ctx, 'right', half, half);
+		// Divider
+		ctx.strokeStyle = '#e3e7eb';
+		ctx.lineWidth = 3;
+		ctx.beginPath(); ctx.moveTo(half, 130); ctx.lineTo(half, h - 40); ctx.stroke();
+		this.texture.needsUpdate = true;
+	}
+
+	drawHand(ctx, side, x0, width) {
+		const rows = this.hands[side] || [];
+		const cx = x0 + width / 2, top = 130;
+		const isLeft = side === 'left';
+		const btn = isLeft ? ['X', 'Y'] : ['A', 'B'];
+
+		// Controller, top view: tracking ring, handle, face with stick and buttons.
+		ctx.save();
+		ctx.translate(cx, top + 150);
+		ctx.lineWidth = 10;
+		ctx.strokeStyle = '#2b3036';
+		ctx.beginPath(); ctx.arc(isLeft ? -40 : 40, -40, 105, 0, Math.PI * 2); ctx.stroke(); // ring
+		ctx.fillStyle = '#2b3036';
+		roundRect(ctx, -70, -60, 140, 230, 60); ctx.fill(); // body
+		// Trigger (front) and grip (inner side) tabs
+		ctx.fillStyle = BADGE.trigger.fill;
+		roundRect(ctx, -34, -96, 68, 30, 12); ctx.fill();
+		ctx.fillStyle = BADGE.grip.fill;
+		roundRect(ctx, isLeft ? 64 : -84, 30, 20, 100, 8); ctx.fill();
+		// Stick and buttons
+		ctx.fillStyle = '#8a949e';
+		ctx.beginPath(); ctx.arc(isLeft ? 18 : -18, -10, 30, 0, Math.PI * 2); ctx.fill();
+		ctx.fillStyle = '#5d6873';
+		ctx.beginPath(); ctx.arc(isLeft ? 18 : -18, -10, 16, 0, Math.PI * 2); ctx.fill();
+		ctx.font = `700 28px ${FONT}`;
+		ctx.textAlign = 'center';
+		const bx = isLeft ? -22 : 22;
+		for (const [i, k] of btn.entries()) {
+			const by = 60 + i * 56;
+			ctx.fillStyle = '#e8ecef';
+			ctx.beginPath(); ctx.arc(bx + (isLeft ? -6 : 6) * i, by, 22, 0, Math.PI * 2); ctx.fill();
+			ctx.fillStyle = '#1d2329';
+			ctx.fillText(k, bx + (isLeft ? -6 : 6) * i, by + 1);
+		}
+		// Orb above the back of the hand
+		ctx.fillStyle = BADGE.orb.fill;
+		ctx.beginPath(); ctx.arc(0, 200, 16, 0, Math.PI * 2); ctx.fill();
+		ctx.restore();
+
+		ctx.textAlign = 'left';
+		ctx.fillStyle = '#5d6873';
+		ctx.font = `600 34px ${FONT}`;
+		ctx.textAlign = 'center';
+		ctx.fillText(isLeft ? 'Left hand' : 'Right hand', cx, top + 395);
+		ctx.textAlign = 'left';
+
+		// Rows: coloured badge + what it does.
+		let y = top + 470;
+		for (const r of rows) {
+			const b = BADGE[r.kind] || BADGE.button;
+			ctx.font = `700 28px ${FONT}`;
+			const bw = Math.max(64, ctx.measureText(r.key).width + 32);
+			roundRect(ctx, x0 + 44, y - 26, bw, 52, 14);
+			ctx.fillStyle = b.fill; ctx.fill();
+			ctx.fillStyle = b.text;
+			ctx.textAlign = 'center';
+			ctx.fillText(r.key, x0 + 44 + bw / 2, y + 1);
+			ctx.textAlign = 'left';
+			ctx.fillStyle = '#1d2329';
+			let px = 34;
+			do ctx.font = `400 ${px}px ${FONT}`;
+			while (ctx.measureText(r.text).width > width - bw - 90 && --px > 22);
+			ctx.fillText(r.text, x0 + 44 + bw + 20, y + 1);
+			y += 68;
+		}
+	}
 }

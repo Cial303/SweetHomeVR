@@ -109,26 +109,28 @@ Resolve MTL and texture paths relative to the model's folder through a `LoadingM
 - Title: "Sweet Home VR".
 - Buttons: Open from Dropbox, Open from link, Open file, plus the Recent list.
 - Live orbit preview of the dollhouse.
-- **Enter VR** and **Enter AR** buttons (AR = `immersive-ar` passthrough; greyscale on Quest 2). Show each only if `navigator.xr.isSessionSupported` says so.
+- One **Enter VR** button, shown only if `navigator.xr.isSessionSupported` says so (changed at the user's request from separate VR and AR buttons). When `immersive-ar` is supported the session is an AR session and the in-headset menu switches between the VR view (an opaque world drawn over the passthrough) and the passthrough view (greyscale on Quest 2); otherwise it is an `immersive-vr` session, VR only.
 - Use `local-floor` reference space.
 
 **XR dollhouse mode** (on entering XR, like SketchUp Viewer's tabletop view)
-- VR: a calm, minimal showroom (light floor with a faint grid, soft gradient sky) and a rectangular museum plinth 0.75 m high with 40 cm of table around the model, its front edge 35 cm in front of the user (changed from a round pedestal at the user's request). AR: no room and no plinth; the model floats at the same spot over passthrough.
-- On entering XR (and when the headset is re-centred), the plinth is placed in front of where the user stands and looks, not at the floor origin.
+- VR view: a gallery room (changed at the user's request from the plain showroom): dark oak floor with a pale rug, warm white walls with dark skirting, a charcoal feature wall, tall windows on both sides, a skylight, and large abstract canvases, under a soft gradient sky. A rectangular museum plinth 0.6 m high with 20 cm of table around the model, its front edge 30 cm in front of the user. The eyes are lifted 25 cm (as if about 2 m tall) so it is easy to look and point into the rooms. Passthrough view: no room, no plinth, no lift; the model floats at the same spot.
+- On entering XR (and when the headset is re-centred), the room and plinth are placed in front of where the user stands and looks, not at the floor origin.
 - The model is scaled to fit about 1.2 m across and sits on the plinth; it turns on the plinth, which stays still.
 - Thumbstick left/right rotates the model; up/down zooms it (×0.5 to ×4).
 - Grip plus moving the controller grabs and moves the model, keeping it upright (yaw only).
 - Each controller shows a laser ray. Pointing at the model shows a small person-height marker where the floor is; **trigger** enters 1:1 standing at that spot. Find the floor by casting downwards in model space and taking the first upward-facing hit.
-- Menu (canvas texture, laser-clickable), summoned rather than always visible (changed at the user's request; SketchUp's fixed waist bar got in the way): a small orb floats over the left hand; pointing at it and pulling the trigger, or pressing **A or X**, opens the menu in front of the head. It closes on a choice, on B/Y, or on a click elsewhere. It opens by itself once, on the first entry, so it is discovered. Dollhouse items: **Walk in** (at the observer camera position), **Ceilings on/off**, **Recentre**, **Exit VR**.
+- Menu (canvas texture, laser-clickable), summoned rather than always visible (changed at the user's request; SketchUp's fixed waist bar got in the way): a living orb (glowing core in a faceted crystal with two orbiting rings; it breathes, turns, and glows blue when approached) floats over each hand. Pointing at one with the other hand's laser and pulling the trigger, touching it with the other controller, or pressing **A or X**, opens the menu in front of the head, with a controls card to its left, out of the main view (a drawing of both controllers and what each stick, trigger, grip and button does in this mode). It closes on a choice, on B/Y, or on a click elsewhere. It opens by itself once, on the first entry, so it is discovered. Dollhouse items: **Walk in** (at the observer camera position), **Ceilings on/off**, **View VR/passthrough**, **Recentre**, **Exit VR**.
 
 **XR 1:1 walk mode**
 - The model is at real scale. Move a rig `Group` that contains the camera and controllers.
-- Left stick: smooth locomotion relative to head direction, about 1.5 m/s.
-- Right stick left/right: snap turn 30°.
-- Right stick forward, or holding either trigger: show a **parabolic teleport arc** with a landing ring. Valid only on surfaces with normal.y > 0.7 (blue); otherwise red. Release to teleport, with a short fade.
-- Floor following: each frame, cast down from 0.6 m above the feet. If a floor is within ±0.6 m, adopt its height (this handles stairs and levels). Walls don't block movement.
+- Left stick: smooth locomotion relative to head direction, about 0.75 m/s (halved at the user's request).
+- Right stick left/right: snap turn 15°, 30° or 45° (menu option, remembered; 30° by default).
+- Right stick forward: show a **parabolic teleport arc** with a landing ring. The arc passes through furniture and stops at walls, floors, stairs and the ground; it is valid (blue) only on a walkable surface with normal.y > 0.7, otherwise red (walls). Release to teleport, with a short fade.
+- Holding either trigger grabs the space: moving the hand pulls the user along horizontally (changed at the user's request from trigger-to-teleport). Both hands average.
+- Floor following: each frame, cast down from 0.6 m above the feet. If a walkable floor (room floors, the ground and staircases) is within ±0.6 m, adopt its height (this handles stairs and levels). Furniture is never stood on: you walk through beds, tables and sofas (at the user's request). Staircases are pieces with a `staircaseCutOutShape` or a staircase name, kept in their own layer. Walls don't block movement. Models without rooms (OBJ, GLB) are walkable everywhere.
+- Person height: menu option Yours / 1.4 / 1.7 / 2.0 m (remembered). For a set height the rig is raised or lowered so the eyes are 11 cm below that height, measured when you enter walk mode or change the option.
 - **B or Y:** back to dollhouse (or closes the menu if it is open).
-- **A or X** (or the left-hand orb): toggle a menu in front of the head with Dollhouse, Ceilings on/off, Snap angle 30°/45° (remembered), and Exit VR. Lasers are hidden while walking, except while the menu is open or a laser points at the orb.
+- **A or X** (or an orb): toggle a menu in front of the head with Dollhouse, Ceilings on/off, View VR/passthrough, Turn 15°/30°/45°, Height, and Exit VR. Lasers are hidden while walking, except while the menu is open or a laser points at an orb.
 
 ## Project layout
 

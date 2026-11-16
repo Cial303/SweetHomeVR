@@ -140,7 +140,7 @@ async function load(files, label, source = { type: 'file' }) {
 		await new Promise((r) => setTimeout(r, 0)); // let the status paint
 		// ?nomerge (debugging only): show the scene exactly as loaded.
 		const merged = new URLSearchParams(location.search).has('nomerge')
-			? { group: result.root, layers: Object.fromEntries(['main', 'floors', 'ceilings', 'ground'].map((n) => [n, result.root.getObjectByName(n === 'main' ? 'walls' : n) || new THREE.Group()])), stats: null }
+			? { group: result.root, layers: Object.fromEntries(['main', 'walls', 'floors', 'ceilings', 'ground', 'stairs'].map((n) => [n, result.root.getObjectByName(n === 'main' ? 'furniture' : n) || new THREE.Group()])), stats: null }
 			: optimiseModel(result.root);
 		disposeCurrent();
 		current = { ...result, root: merged.group, layers: merged.layers, merged: merged.stats };
@@ -347,7 +347,7 @@ async function renderRecents() {
 }
 
 // ---------------------------------------------------------------------------
-// Enter VR / Enter AR (shown only when the browser supports them)
+// Enter VR (shown only when the browser supports it; passthrough is chosen in the headset)
 // ---------------------------------------------------------------------------
 
 let xrSupport = { vr: false, ar: false };
@@ -355,27 +355,28 @@ let xrSupport = { vr: false, ar: false };
 function updateXRButtons() {
 	const box = $('xr-buttons');
 	box.replaceChildren();
-	for (const [kind, label] of [['vr', 'Enter VR'], ['ar', 'Enter AR']]) {
-		if (!xrSupport[kind]) continue;
-		const b = document.createElement('button');
-		b.className = 'xr';
-		// Simple headset glyph, then the label.
-		b.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 7h16a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-4.2l-2.1-2.4a2.3 2.3 0 0 0-3.4 0L8.2 17H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2zm3.5 3a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5zm9 0a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5z"/></svg>';
-		b.append(label);
-		b.disabled = !current;
-		b.title = current ? '' : 'Open a model first';
-		b.addEventListener('click', async () => {
-			try {
-				controls.enabled = false;
-				await xr.start(kind);
-			} catch (e) {
-				controls.enabled = true;
-				console.error(e);
-				setStatus(`Could not start ${label.replace('Enter ', '')}: ${e.message}`, true);
-			}
-		});
-		box.append(b);
-	}
+	if (!xrSupport.vr && !xrSupport.ar) return;
+	// One button: an AR-capable session can switch between VR and passthrough
+	// from the in-headset menu.
+	const kind = xrSupport.ar ? 'ar' : 'vr';
+	const b = document.createElement('button');
+	b.className = 'xr';
+	// Simple headset glyph, then the label.
+	b.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 7h16a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-4.2l-2.1-2.4a2.3 2.3 0 0 0-3.4 0L8.2 17H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2zm3.5 3a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5zm9 0a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5z"/></svg>';
+	b.append('Enter VR');
+	b.disabled = !current;
+	b.title = current ? '' : 'Open a model first';
+	b.addEventListener('click', async () => {
+		try {
+			controls.enabled = false;
+			await xr.start(kind);
+		} catch (e) {
+			controls.enabled = true;
+			console.error(e);
+			setStatus(`Could not start VR: ${e.message}`, true);
+		}
+	});
+	box.append(b);
 }
 
 XRExperience.supported().then((s) => { xrSupport = s; updateXRButtons(); });

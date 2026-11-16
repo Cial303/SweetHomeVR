@@ -1,41 +1,54 @@
 // XR session and modes (SPEC.md, "Experience and controls").
 //
-//   dollhouse  the home on a plinth (VR showroom) or floating (AR):
-//              thumbstick rotate/zoom, grip to move, laser + trigger to jump
-//              in at 1:1.
+//   dollhouse  the home on a plinth in a gallery room (VR view) or floating
+//              over passthrough (AR view): thumbstick rotate/zoom, grip to
+//              move, laser + trigger to jump in at 1:1.
 //   walk       the home at 1:1: left stick walks, right stick snap-turns,
-//              right stick forward or a held trigger aims a teleport arc,
-//              the floor is followed (stairs, levels). B or Y goes back.
+//              right stick forward aims a teleport arc, a held trigger grabs
+//              the space so you can pull yourself along. You stay on floors
+//              and stairs, never on furniture. B or Y goes back.
 //
-// Menu: an orb floats over the left hand. Point at it and pull the trigger,
-// or press A / X, to open the menu in front of you; it closes on a choice,
+// One session for both views: when the browser supports it, an
+// immersive-ar session is used and "VR" simply draws an opaque world over
+// the passthrough, so the menu can switch between them.
+//
+// Menu: a living orb floats over each hand. Point at it with the other hand
+// and pull the trigger, touch it with the other hand, or press A / X, to open
+// the menu (with a controls diagram) in front of you. It closes on a choice,
 // on B / Y, or when you click anywhere else.
 //
 // Scene graph (owned by main.js):
 //   scene
-//   ├─ rig ─ camera, controllers, menu   moved to place the user in walk mode
+//   ├─ rig ─ camera, controllers, menu   moved to place the user
+//   ├─ stage ─ gallery room, plinth      what Recentre moves
 //   └─ anchor ─ centerer ─ model         anchor: dollhouse position/yaw/scale
 //                                        centerer: puts the model's bottom-centre at the origin
 
 import * as THREE from 'three';
-import { Panel } from './panel.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { Panel, ControlsCard } from './panel.js';
 import { XRInput, TeleportArc, yawOf } from './xr-input.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
-const PLINTH_HEIGHT = 0.75; // table height: you look down onto the model
-const PLINTH_MARGIN = 0.4; // table left around the model (it is ~1.2 m across)
-const PLINTH_FRONT_GAP = 0.35; // from where you stand to the plinth's front edge
+const PLINTH_HEIGHT = 0.6; // low table: you look down into the rooms
+const PLINTH_MARGIN = 0.2; // table left around the model (it is ~1.2 m across)
+const PLINTH_FRONT_GAP = 0.3; // from where you stand to the plinth's front edge
+const DOLLHOUSE_EYE_LIFT = 0.25; // VR dollhouse: see it as if you were ~2 m tall
 const DOLLHOUSE_SIZE = 1.2; // metres across
 const ZOOM_MIN = 0.5, ZOOM_MAX = 4;
 const ROTATE_SPEED = 1.6; // rad/s at full stick
 const ZOOM_SPEED = 1.2; // e-folds/s at full stick
-const WALK_SPEED = 1.5; // m/s at full stick
+const WALK_SPEED = 0.75; // m/s at full stick
 const STEP = 0.6; // floor following: look this far above and below the feet
 const FADE_OUT = 0.1, FADE_IN = 0.15; // teleport fade, seconds
-const MENU_DISTANCE = 0.65, MENU_DROP = 0.08; // summoned menu: in front of, just below the eyes (above the dollhouse)
-const SNAP_KEY = 'svr.snapAngle';
-const HINT = 'A / X or the left-hand orb';
+const MENU_DISTANCE = 0.65, MENU_DROP = 0.1, MENU_LEFT = 0.1; // summoned menu, relative to the eyes (controls card to its left)
+const TURNS = [15, 30, 45]; // snap turn options, degrees
+const HEIGHTS = [0, 1.4, 1.7, 2.0]; // person height options, metres (0 = your own)
+const EYE_BELOW_TOP = 0.11; // eyes are about this far below the top of the head
+const ORB_TOUCH = 0.08, ORB_RELEASE = 0.14; // touching an orb with the other hand
+const HINT = 'A / X, or an orb on your hands';
+const KEYS = { turn: 'svr.snapAngle', height: 'svr.height', view: 'svr.view' };
 
 export class XRExperience {
 	/**
@@ -44,17 +57,22 @@ export class XRExperience {
 	 */
 	constructor({ renderer, scene, camera, rig, anchor, centerer, onEnd }) {
 		Object.assign(this, { renderer, scene, camera, rig, anchor, centerer, onEnd });
-		this.model = null; // { group, layers, bounds, observer, home }
+		this.model = null; // { group, layers, bounds, observer, skyColor }
 		this.session = null;
-		this.sessionMode = null; // 'vr' | 'ar'
+		this.sessionMode = null; // 'vr' | 'ar' (the session type)
+		this.view = safeGet(KEYS.view) === 'ar' ? 'ar' : 'vr'; // what is shown (AR sessions only)
 		this.mode = null; // 'dollhouse' | 'walk'
 		this.plinthDistance = 1; // centre of the plinth in front of the user; set by buildPlinth()
 		this.doll = { pos: new THREE.Vector3(0, PLINTH_HEIGHT, -this.plinthDistance), yaw: 0, zoom: 1 };
-		this.grab = null;
-		this.tele = null; // teleport being aimed: { c, via: 'stick' | 'trigger', result }
+		this.lift = 0; // the rig's height above the floor the user stands on
+		this.grab = null; // dollhouse: grabbing the model
+		this.tele = null; // teleport being aimed: { c, result }
 		this.fade = null; // { t, action }
 		this.snapReady = true;
-		this.snapAngle = Number(safeGet(SNAP_KEY)) === 45 ? 45 : 30;
+		const turn = Number(safeGet(KEYS.turn));
+		this.snapAngle = TURNS.includes(turn) ? turn : 30;
+		const height = Number(safeGet(KEYS.height));
+		this.personHeight = HEIGHTS.includes(height) ? height : 0;
 		this.menuShownOnce = false;
 		this.pendingRecentre = false;
 		this.raycaster = new THREE.Raycaster();
@@ -63,9 +81,10 @@ export class XRExperience {
 		this.input = new XRInput(renderer, rig);
 		this.input.setVisible(false);
 		this.buildShowroom();
+		this.buildWalkSky();
 		this.buildMarker();
 		this.buildMenus();
-		this.buildOrb();
+		this.buildOrbs();
 		this.buildFade();
 		this.arc = new TeleportArc(scene);
 	}
@@ -75,26 +94,14 @@ export class XRExperience {
 	// -----------------------------------------------------------------------
 
 	buildShowroom() {
-		// Calm, minimal room: light floor with a faint grid, soft gradient sky.
+		// Outside the gallery: a soft gradient sky and a pale ground, seen
+		// through the windows and the skylight.
 		const room = new THREE.Group();
 		room.name = 'showroom';
-		const floor = new THREE.Mesh(new THREE.CircleGeometry(14, 64).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0xeceef0 }));
-		const grid = new THREE.GridHelper(28, 56, 0xb9c0c7, 0xd3d8dd);
-		grid.material.transparent = true;
-		grid.material.opacity = 0.35;
-		grid.position.y = 0.002;
-		const skyGeo = new THREE.SphereGeometry(40, 32, 16);
-		const colors = [];
-		const top = new THREE.Color(0xb7cde0), horizon = new THREE.Color(0xf5f7f9);
-		const pos = skyGeo.attributes.position;
-		for (let i = 0; i < pos.count; i++) {
-			const t = Math.max(0, pos.getY(i) / 40);
-			const c = horizon.clone().lerp(top, Math.pow(t, 0.7));
-			colors.push(c.r, c.g, c.b);
-		}
-		skyGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-		const sky = new THREE.Mesh(skyGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, depthWrite: false }));
-		room.add(sky, floor, grid);
+		const sky = new THREE.Mesh(gradientSphere(40, 0xb7cde0, 0xf5f7f9), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, depthWrite: false }));
+		const ground = new THREE.Mesh(new THREE.CircleGeometry(39, 48).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0xdfe3dc }));
+		ground.position.y = -0.02;
+		room.add(sky, ground);
 		room.visible = false;
 		this.showroom = room;
 		this.scene.add(room);
@@ -102,8 +109,9 @@ export class XRExperience {
 		// Stage: what Recentre moves, positioned relative to the user.
 		this.stage = new THREE.Group();
 		this.stage.name = 'stage';
+		this.gallery = buildGallery();
 		// Museum plinth: sized to the model in setModel(). It stays still and
-		// the model turns on it; the 40 cm margin keeps it on the table.
+		// the model turns on it.
 		const pedestal = new THREE.Group();
 		pedestal.name = 'plinth';
 		this.pedestal = pedestal;
@@ -112,7 +120,7 @@ export class XRExperience {
 			body: new THREE.MeshLambertMaterial({ color: 0xf2f1ee }),
 			base: new THREE.MeshLambertMaterial({ color: 0x33383d }),
 		};
-		this.stage.add(pedestal);
+		this.stage.add(this.gallery, pedestal);
 		this.stage.visible = false;
 		this.scene.add(this.stage);
 		this.buildPlinth(1.2, 0.9);
@@ -121,13 +129,15 @@ export class XRExperience {
 	/**
 	 * A rectangular exhibition plinth for a model footprint of w x d metres:
 	 * a thin white top slab, an off-white body, and a dark recessed base
-	 * (shadow gap) so it seems to float just above the floor.
+	 * (shadow gap) so it seems to float just above the floor. The gallery
+	 * room is centred on it.
 	 */
 	buildPlinth(w, d) {
 		const SLAB = 0.03, GAP = 0.05, INSET = 0.025;
 		const W = w + 2 * PLINTH_MARGIN, D = d + 2 * PLINTH_MARGIN, H = PLINTH_HEIGHT;
 		this.plinthDistance = D / 2 + PLINTH_FRONT_GAP;
 		this.pedestal.position.set(0, 0, -this.plinthDistance);
+		this.gallery.position.set(0, 0, -this.plinthDistance);
 		const p = this.pedestal;
 		for (const m of p.children) m.geometry.dispose();
 		p.clear();
@@ -140,6 +150,15 @@ export class XRExperience {
 		box(W, SLAB, D, H - SLAB / 2, M.top);
 		box(W - 0.01, H - SLAB - GAP, D - 0.01, GAP + (H - SLAB - GAP) / 2, M.body);
 		box(W - 2 * INSET, GAP, D - 2 * INSET, GAP / 2, M.base);
+	}
+
+	/** Sky for walk mode in the VR view: follows the head, coloured in setModel(). */
+	buildWalkSky() {
+		this.walkSky = new THREE.Mesh(gradientSphere(200, 0xcce4fc, 0xffffff), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, depthWrite: false, fog: false }));
+		this.walkSky.renderOrder = -1;
+		this.walkSky.visible = false;
+		this.walkSky.name = 'walk-sky';
+		this.camera.add(this.walkSky);
 	}
 
 	buildMarker() {
@@ -159,43 +178,72 @@ export class XRExperience {
 		this.markers = [m, m.clone()]; // one per controller
 	}
 
-	/** One menu per mode; they live in the rig so they travel with the user. */
+	/** One menu per mode, each with a controls card beside it; they live in the rig. */
 	buildMenus() {
+		const opts = (title) => ({ title, hint: HINT, width: 0.25, pxPerM: 1600 });
 		this.menus = {
 			dollhouse: new Panel([
 				{ id: 'walk', label: 'Walk in' },
 				{ id: 'ceilings', label: 'Ceilings: on' },
+				{ id: 'view', label: 'View: VR' },
 				{ id: 'recentre', label: 'Recentre' },
 				{ id: 'exit', label: 'Exit VR' },
-			], { title: 'Dollhouse', hint: HINT }),
+			], opts('Dollhouse')),
 			walk: new Panel([
 				{ id: 'dollhouse', label: 'Dollhouse' },
 				{ id: 'ceilings', label: 'Ceilings: on' },
-				{ id: 'snap', label: `Turn: ${this.snapAngle}°` },
+				{ id: 'view', label: 'View: VR' },
+				{ id: 'turn', label: 'Turn: 30°' },
+				{ id: 'height', label: 'Height: yours' },
 				{ id: 'exit', label: 'Exit VR' },
-			], { title: 'Walking', hint: HINT }),
+			], opts('Walking')),
 		};
-		for (const p of Object.values(this.menus)) {
+		const either = (btn) => [
+			{ kind: 'stick', key: 'Stick', text: '↔ rotate   ↕ zoom' },
+			{ kind: 'trigger', key: 'Trigger', text: 'Jump in where you point' },
+			{ kind: 'grip', key: 'Grip', text: 'Hold to move the model' },
+			{ kind: 'button', key: btn[0], text: 'Menu' },
+			{ kind: 'button', key: btn[1], text: 'Close the menu' },
+			{ kind: 'orb', key: 'Orb', text: 'Point or touch: menu' },
+		];
+		const cards = {
+			dollhouse: new ControlsCard('Controls: dollhouse', { left: either('XY'), right: either('AB') }),
+			walk: new ControlsCard('Controls: walking', {
+				left: [
+					{ kind: 'stick', key: 'Stick', text: 'Walk where you look' },
+					{ kind: 'trigger', key: 'Trigger', text: 'Hold and pull: move' },
+					{ kind: 'button', key: 'X', text: 'Menu' },
+					{ kind: 'button', key: 'Y', text: 'Back to the dollhouse' },
+					{ kind: 'orb', key: 'Orb', text: 'Point or touch: menu' },
+				],
+				right: [
+					{ kind: 'stick', key: 'Stick ↔', text: 'Turn' },
+					{ kind: 'stick', key: 'Stick ↑', text: 'Aim, release: teleport' },
+					{ kind: 'trigger', key: 'Trigger', text: 'Hold and pull: move' },
+					{ kind: 'button', key: 'A', text: 'Menu' },
+					{ kind: 'button', key: 'B', text: 'Back to the dollhouse' },
+					{ kind: 'orb', key: 'Orb', text: 'Point or touch: menu' },
+				],
+			}),
+		};
+		for (const [mode, p] of Object.entries(this.menus)) {
 			p.mesh.visible = false;
 			p.mesh.material.depthTest = false; // never hidden inside a wall
+			const card = cards[mode];
+			const mw = p.mesh.geometry.parameters.width, cw = card.mesh.geometry.parameters.width;
+			// Card on the left of the menu, out of the main view, turned towards the user.
+			card.mesh.position.set(-(mw / 2 + 0.03 + cw / 2 * Math.cos(0.4)), 0, cw / 2 * Math.sin(0.4));
+			card.mesh.rotation.y = 0.4;
+			p.mesh.add(card.mesh);
+			p.card = card;
 			this.rig.add(p.mesh);
 		}
 		this.menu = null; // the open Panel, or null
 	}
 
-	/** Small glowing orb over the left hand: point and click to open the menu. */
-	buildOrb() {
-		const orb = new THREE.Group();
-		orb.name = 'menu-orb';
-		this.orbMat = new THREE.MeshBasicMaterial({ color: 0xd9822b });
-		const core = new THREE.Mesh(new THREE.SphereGeometry(0.018, 20, 14), this.orbMat);
-		const halo = new THREE.Mesh(new THREE.SphereGeometry(0.026, 20, 14), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false }));
-		// Larger invisible target so the orb is easy to hit with the laser.
-		this.orbTarget = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 8), new THREE.MeshBasicMaterial({ visible: false }));
-		orb.add(core, halo, this.orbTarget);
-		orb.position.set(0, 0.055, 0.06); // above the back of the hand, toward the wrist
-		this.orb = orb;
-		this.orbHolder = null;
+	/** A living orb over each hand: point at it, or touch it, to open the menu. */
+	buildOrbs() {
+		this.orbs = [0, 1].map(() => makeOrb());
 	}
 
 	/** Black sphere around the head for the teleport fade. */
@@ -211,13 +259,14 @@ export class XRExperience {
 	// Model and session
 	// -----------------------------------------------------------------------
 
-	/** model: { group, layers, bounds (Box3, model space, no ground), observer } */
+	/** model: { group, layers, bounds (Box3, model space, no ground), observer, skyColor } */
 	setModel(model) {
 		this.model = model;
 		this.centerer.add(...this.markers);
 		const size = model.bounds.getSize(new THREE.Vector3());
 		this.baseScale = DOLLHOUSE_SIZE / Math.max(size.x, size.z, 0.01);
 		this.buildPlinth(size.x * this.baseScale, size.z * this.baseScale);
+		recolourSphere(this.walkSky.geometry, 200, model.skyColor ?? 0xcce4fc, 0xffffff);
 		this.updateLabels();
 	}
 
@@ -229,6 +278,7 @@ export class XRExperience {
 		return { vr, ar };
 	}
 
+	/** kind: 'ar' (both views, switchable in the menu) or 'vr' (VR only). */
 	async start(kind) {
 		if (!this.model || this.session) return;
 		const session = await navigator.xr.requestSession(kind === 'ar' ? 'immersive-ar' : 'immersive-vr', {
@@ -242,6 +292,7 @@ export class XRExperience {
 		this.session = session;
 		this.sessionMode = kind;
 		this.saved = { background: this.scene.background };
+		this.scene.background = null; // the sky spheres draw the VR view; null shows passthrough
 		session.addEventListener('end', () => this.handleEnd());
 		// Holding the Meta button re-centres the headset: follow it.
 		this.renderer.xr.getReferenceSpace()?.addEventListener?.('reset', () => {
@@ -250,6 +301,7 @@ export class XRExperience {
 		this.input.setVisible(true);
 		this.stage.position.set(0, 0, 0);
 		this.stage.rotation.set(0, 0, 0);
+		this.updateLabels();
 		this.resetDollhouse();
 		this.enterDollhouse();
 		// The floor origin is not necessarily where you stand (it can be
@@ -270,14 +322,15 @@ export class XRExperience {
 		this.arc.hide();
 		this.closeMenu();
 		this.fadeMesh.visible = false;
-		this.orb.removeFromParent();
-		this.orbHolder = null;
+		this.walkSky.visible = false;
+		for (const o of this.orbs) { o.group.removeFromParent(); o.holder = null; }
 		this.input.setVisible(false);
 		this.showroom.visible = false;
 		this.stage.visible = false;
 		for (const m of this.markers) m.visible = false;
 		this.rig.position.set(0, 0, 0);
 		this.rig.rotation.set(0, 0, 0);
+		this.lift = 0;
 		this.anchor.position.set(0, 0, 0);
 		this.anchor.rotation.set(0, 0, 0);
 		this.anchor.scale.setScalar(1);
@@ -294,17 +347,56 @@ export class XRExperience {
 		return pose ? new THREE.Matrix4().fromArray(pose.transform.matrix) : null;
 	}
 
+	/** True when the opaque VR world is shown (always, in a VR-only session). */
+	get vrView() { return this.sessionMode !== 'ar' || this.view === 'vr'; }
+
+	/** Shows the VR world or the passthrough for the current mode. */
+	applyView() {
+		const vr = this.vrView;
+		if (this.mode === 'dollhouse') {
+			this.showroom.visible = vr;
+			this.gallery.visible = vr;
+			this.pedestal.visible = vr;
+			this.walkSky.visible = false;
+			this.model.layers.ground.visible = false;
+			this.setLift(vr ? DOLLHOUSE_EYE_LIFT : 0);
+		} else if (this.mode === 'walk') {
+			this.showroom.visible = false;
+			this.walkSky.visible = vr;
+			this.model.layers.ground.visible = vr;
+		}
+	}
+
+	/** Raises the rig by `lift` above the floor the user stands on. */
+	setLift(lift) {
+		this.rig.position.y += lift - this.lift;
+		this.lift = lift;
+		this.rig.updateMatrixWorld(true);
+	}
+
+	/** Walk mode: lift that puts the eyes at the chosen person height (0 = your own). */
+	personLift() {
+		if (!this.personHeight) return 0;
+		const eye = new THREE.Vector3().setFromMatrixPosition(this.camera.matrix).y;
+		return eye > 0.3 ? this.personHeight - EYE_BELOW_TOP - eye : 0;
+	}
+
 	// -----------------------------------------------------------------------
-	// Menu and orb
+	// Menu and orbs
 	// -----------------------------------------------------------------------
 
 	updateLabels() {
 		const on = this.model?.layers.ceilings.visible ?? true;
-		for (const p of Object.values(this.menus)) p.setLabel('ceilings', `Ceilings: ${on ? 'on' : 'off'}`);
-		this.menus.walk.setLabel('snap', `Turn: ${this.snapAngle}°`);
+		const view = this.sessionMode === 'vr' ? 'View: VR only' : `View: ${this.view === 'vr' ? 'VR' : 'passthrough'}`;
+		for (const p of Object.values(this.menus)) {
+			p.setLabel('ceilings', `Ceilings: ${on ? 'on' : 'off'}`);
+			p.setLabel('view', view);
+		}
+		this.menus.walk.setLabel('turn', `Turn: ${this.snapAngle}°`);
+		this.menus.walk.setLabel('height', `Height: ${this.personHeight ? `${this.personHeight.toFixed(1)} m` : 'yours'}`);
 	}
 
-	/** Opens this mode's menu in front of the head (yaw only, tilted to face the eyes). */
+	/** Opens this mode's menu in front of the head (yaw only, facing the eyes), a little to the left, with the controls card further left. */
 	openMenu(headMatrix = this.camera.matrix) {
 		this.closeMenu();
 		const panel = this.menus[this.mode];
@@ -312,10 +404,11 @@ export class XRExperience {
 		const head = new THREE.Vector3().setFromMatrixPosition(headMatrix);
 		const yaw = yawOf(headMatrix);
 		const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-		panel.mesh.position.copy(head).addScaledVector(fwd, MENU_DISTANCE);
+		const left = new THREE.Vector3(-Math.cos(yaw), 0, Math.sin(yaw));
+		panel.mesh.position.copy(head).addScaledVector(fwd, MENU_DISTANCE).addScaledVector(left, MENU_LEFT);
 		panel.mesh.position.y -= MENU_DROP;
 		this.rig.updateMatrixWorld(true);
-		panel.mesh.lookAt(this.rig.localToWorld(head.clone()));
+		panel.mesh.lookAt(this.rig.localToWorld(head.clone().setY(panel.mesh.position.y)));
 		panel.setHover(null);
 		panel.mesh.visible = true;
 		this.menu = panel;
@@ -328,28 +421,38 @@ export class XRExperience {
 
 	toggleMenu() { this.menu ? this.closeMenu() : this.openMenu(); }
 
-	/** Puts the orb on the left controller (or the only one there is). */
-	placeOrb() {
+	/** Puts an orb on each controller. */
+	placeOrbs() {
 		const active = this.input.active();
-		const holder = this.input.hands.left?.isController ? this.input.hands.left : active[0] ?? null;
-		if (holder === this.orbHolder) return;
-		this.orb.removeFromParent();
-		if (holder) holder.grip.add(this.orb);
-		this.orbHolder = holder;
+		this.orbs.forEach((o, i) => {
+			const holder = active[i] ?? null;
+			if (holder === o.holder) return;
+			o.group.removeFromParent();
+			if (holder) holder.grip.add(o.group);
+			o.holder = holder;
+		});
 	}
 
 	/**
-	 * Laser vs. orb and menu, for every controller. Clicks are handled here.
-	 * Returns the set of controllers whose laser is on the UI this frame (their
-	 * trigger belongs to the UI), and the menu action to run, if any.
+	 * Laser vs. orbs and menu, for every controller; touching an orb with
+	 * the other hand. Clicks are handled here. Returns the set of controllers
+	 * whose laser is on the UI this frame (their trigger belongs to the UI),
+	 * and the menu action to run, if any.
 	 */
 	pointUI() {
 		const onUI = new Set();
-		let hover = null, action = null, orbHot = false, closeIt = false;
-		for (const c of this.input.active()) {
+		let hover = null, action = null, toggle = false, close = false;
+		const hot = new Set();
+		const active = this.input.active();
+		for (const c of active) {
 			this.input.setRaycaster(c, this.raycaster);
 			const menuHit = this.menu ? this.raycaster.intersectObject(this.menu.mesh, false)[0] : null;
-			const orbHit = c !== this.orbHolder && this.orb.parent ? this.raycaster.intersectObject(this.orbTarget, false)[0] : null;
+			let orbHit = null, orb = null;
+			for (const o of this.orbs) {
+				if (!o.holder || o.holder === c) continue;
+				const h = this.raycaster.intersectObject(o.target, false)[0];
+				if (h && (!orbHit || h.distance < orbHit.distance)) { orbHit = h; orb = o; }
+			}
 			if (menuHit) {
 				onUI.add(c);
 				this.input.showHit(c, menuHit.distance);
@@ -358,21 +461,35 @@ export class XRExperience {
 				if (c.state.down.trigger && id) action = id;
 			} else if (orbHit) {
 				onUI.add(c);
-				orbHot = true;
+				hot.add(orb);
 				this.input.showHit(c, orbHit.distance);
-				if (c.state.down.trigger) closeIt = 'toggle';
+				if (c.state.down.trigger) toggle = true;
 			} else if (this.menu && c.state.down.trigger) {
 				// Clicking anywhere else closes the menu (and does nothing else).
 				onUI.add(c);
-				closeIt = true;
+				close = true;
 			}
 		}
+		// Touch: the other hand's controller reaches into an orb.
+		const p = new THREE.Vector3(), q = new THREE.Vector3();
+		for (const o of this.orbs) {
+			if (!o.holder) continue;
+			o.group.getWorldPosition(p);
+			let near = Infinity;
+			for (const c of active) {
+				if (c === o.holder) continue;
+				this.input.pose(c, q);
+				near = Math.min(near, q.distanceTo(p));
+			}
+			if (near < ORB_TOUCH && o.armed) { toggle = true; o.armed = false; }
+			if (near > ORB_RELEASE) o.armed = true;
+			if (near < ORB_RELEASE) hot.add(o);
+		}
 		this.menu?.setHover(hover);
-		const s = orbHot ? 1.35 : 1 + 0.06 * Math.sin(performance.now() / 300);
-		this.orb.scale.setScalar(s);
-		this.orbMat.color.set(orbHot ? 0x3d8bfd : 0xd9822b);
-		if (closeIt === 'toggle') this.toggleMenu();
-		else if (closeIt) this.closeMenu();
+		const t = performance.now() / 1000;
+		for (const o of this.orbs) animateOrb(o, t, hot.has(o));
+		if (toggle) this.toggleMenu();
+		else if (close) this.closeMenu();
 		return { onUI, action };
 	}
 
@@ -390,9 +507,22 @@ export class XRExperience {
 			case 'walk': this.closeMenu(); this.walkIn(); break;
 			case 'dollhouse': this.closeMenu(); this.enterDollhouse(); break;
 			case 'ceilings': this.toggleCeilings(); break;
-			case 'snap':
-				this.snapAngle = this.snapAngle === 30 ? 45 : 30;
-				safeSet(SNAP_KEY, String(this.snapAngle));
+			case 'view':
+				if (this.sessionMode !== 'ar') break;
+				this.view = this.view === 'vr' ? 'ar' : 'vr';
+				safeSet(KEYS.view, this.view);
+				this.applyView();
+				this.updateLabels();
+				break;
+			case 'turn':
+				this.snapAngle = TURNS[(TURNS.indexOf(this.snapAngle) + 1) % TURNS.length];
+				safeSet(KEYS.turn, String(this.snapAngle));
+				this.updateLabels();
+				break;
+			case 'height':
+				this.personHeight = HEIGHTS[(HEIGHTS.indexOf(this.personHeight) + 1) % HEIGHTS.length];
+				safeSet(KEYS.height, String(this.personHeight));
+				if (this.mode === 'walk') this.setLift(this.personLift());
 				this.updateLabels();
 				break;
 			case 'recentre': this.closeMenu(); this.recentre(); break;
@@ -417,14 +547,10 @@ export class XRExperience {
 		this.closeMenu();
 		this.rig.position.set(0, 0, 0);
 		this.rig.rotation.set(0, 0, 0);
-		this.rig.updateMatrixWorld(true);
-		const vr = this.sessionMode === 'vr';
-		this.showroom.visible = vr;
-		this.pedestal.visible = vr;
+		this.lift = 0;
 		this.stage.visible = true;
-		this.scene.background = null; // VR: the showroom sky sphere; AR: passthrough
-		this.model.layers.ground.visible = false;
 		for (const c of this.input.controllers) this.input.setLaser(c, true);
+		this.applyView();
 		this.applyDollhouse();
 	}
 
@@ -436,7 +562,7 @@ export class XRExperience {
 		this.anchor.updateMatrixWorld(true);
 	}
 
-	/** Moves the plinth and model in front of where the user now stands and looks. */
+	/** Moves the room, plinth and model in front of where the user now stands and looks. */
 	recentre(headMatrix = this.camera.matrixWorld) {
 		const head = new THREE.Vector3().setFromMatrixPosition(headMatrix);
 		const yaw = yawOf(headMatrix);
@@ -453,13 +579,25 @@ export class XRExperience {
 		this.updateLabels();
 	}
 
-	/** Meshes the laser can hit, meshes that count as floor, and what the teleport arc lands on. */
+	/**
+	 * Mesh sets: what the laser can hit, what counts as floor in the
+	 * dollhouse, what the teleport arc hits, and what you can stand on in
+	 * walk mode. Walking ignores furniture: you stand on room floors, the
+	 * ground and staircases, and the arc flies through furniture to the floor
+	 * (walls still stop it). Models without rooms (OBJ, GLB) are walkable
+	 * everywhere.
+	 */
 	targets() {
 		const L = this.model.layers;
+		const stairs = L.stairs?.children ?? [];
+		const walls = L.walls?.children ?? [];
+		const hasRooms = L.floors.children.length > 0 || stairs.length > 0;
+		const walkable = [...L.floors.children, ...stairs, ...L.ground.children, ...(hasRooms ? [] : L.main.children)];
 		return {
-			pointable: [...L.main.children, ...L.floors.children],
-			floors: [...L.floors.children, ...L.ground.children],
-			solid: [...L.main.children, ...L.floors.children, ...L.ground.children],
+			pointable: [...L.main.children, ...walls, ...L.floors.children, ...stairs],
+			floors: [...L.floors.children, ...stairs, ...L.ground.children],
+			solid: [...walls, ...walkable],
+			walkable: new Set(walkable),
 		};
 	}
 
@@ -576,20 +714,19 @@ export class XRExperience {
 		this.tele = null;
 		this.closeMenu();
 		for (const m of this.markers) m.visible = false;
-		this.showroom.visible = false;
 		this.stage.visible = false;
-		for (const c of this.input.controllers) { this.input.showHit(c, null); this.input.setLaser(c, false); }
-		const ar = this.sessionMode === 'ar';
-		this.model.layers.ground.visible = !ar;
-		this.scene.background = ar ? null : new THREE.Color(this.model.skyColor ?? 0xcce4fc);
+		for (const c of this.input.controllers) { this.input.showHit(c, null); this.input.setLaser(c, false); c.pull = null; }
+		this.applyView();
 		this.setWalkTransform();
+		this.lift = this.personLift();
 		const target = this.centerer.localToWorld(modelPt.clone());
 		this.placeUser(target, yaw);
 	}
 
 	/**
-	 * Moves the rig so the user's head is above `target` (feet at its height),
-	 * facing `yaw` if given, otherwise keeping their current heading.
+	 * Moves the rig so the user's head is above `target` (feet at its height,
+	 * plus the person-height lift), facing `yaw` if given, otherwise keeping
+	 * their current heading.
 	 */
 	placeUser(target, yaw) {
 		const headLocal = new THREE.Vector3().setFromMatrixPosition(this.camera.matrix);
@@ -597,7 +734,7 @@ export class XRExperience {
 		const heading = yaw ?? (this.rig.rotation.y + headYawLocal);
 		this.rig.rotation.set(0, heading - headYawLocal, 0);
 		const off = new THREE.Vector3(headLocal.x, 0, headLocal.z).applyAxisAngle(UP, this.rig.rotation.y);
-		this.rig.position.set(target.x - off.x, target.y, target.z - off.z);
+		this.rig.position.set(target.x - off.x, target.y + this.lift, target.z - off.z);
 		this.rig.updateMatrixWorld(true);
 	}
 
@@ -617,30 +754,31 @@ export class XRExperience {
 		this.rig.updateMatrixWorld(true);
 	}
 
-	/** First solid hit between two world points, with its world normal. */
-	hitSegment(a, b) {
+	/** First solid hit between two world points, with its world normal; valid only on walkable floors. */
+	hitSegment(a, b, t) {
 		const dir = b.clone().sub(a);
 		const len = dir.length();
 		if (len < 1e-6) return null;
 		this.raycaster.set(a, dir.divideScalar(len));
 		this.raycaster.far = len;
-		const h = this.raycaster.intersectObjects(this.targets().solid, false)[0];
+		const h = this.raycaster.intersectObjects(t.solid, false)[0];
 		if (!h) return null;
 		const normal = worldNormal(h);
 		if (normal.dot(dir) > 0) normal.negate(); // the side the arc came from
-		return { point: h.point, normal };
+		return { point: h.point, normal, valid: normal.y > 0.7 && t.walkable.has(h.object) };
 	}
 
 	/**
-	 * Floor following: cast down from STEP above the feet; adopt a floor
-	 * within ±STEP (stairs, level changes). Walls don't block movement.
+	 * Floor following: cast down from STEP above the feet; adopt a walkable
+	 * floor (rooms, ground, stairs) within ±STEP. Furniture is ignored, so you
+	 * walk through beds and tables, not over them. Walls don't block movement.
 	 */
 	followFloor(dt) {
 		const head = this.headWorld();
-		const feet = this.rig.position.y;
+		const feet = this.rig.position.y - this.lift;
 		this.floorRay.set(new THREE.Vector3(head.x, feet + STEP, head.z), DOWN);
 		this.floorRay.far = 2 * STEP;
-		const hits = this.floorRay.intersectObjects(this.targets().solid, false);
+		const hits = this.floorRay.intersectObjects([...this.targets().walkable], false);
 		const h = hits.find((x) => worldNormal(x).y > 0.7);
 		if (!h) return;
 		const k = Math.min(1, dt * 12); // a quick ease, so steps don't jolt
@@ -675,7 +813,7 @@ export class XRExperience {
 			this.menuAction(action);
 			if (this.mode !== 'walk' || !this.session) return;
 		}
-		// Lasers only show while the menu is open or one points at the orb.
+		// Lasers only show while the menu is open or one points at an orb.
 		for (const c of this.input.active()) {
 			const show = !!this.menu || onUI.has(c);
 			this.input.setLaser(c, show);
@@ -683,20 +821,16 @@ export class XRExperience {
 		}
 
 		const left = this.input.hands.left, right = this.input.hands.right;
+		const t = this.targets();
 
-		// Teleport: right stick forward, or hold a trigger. Release to go.
+		// Teleport: push the right stick forward and aim; release to go.
 		if (!this.tele && !this.menu && !this.fade) {
 			const rs = right?.state.stick;
-			if (rs && rs.y < -0.6 && Math.abs(rs.y) > Math.abs(rs.x)) this.tele = { c: right, via: 'stick' };
-			else {
-				const c = this.input.active().find((c) => c.state.down.trigger && !onUI.has(c));
-				if (c) this.tele = { c, via: 'trigger' };
-			}
+			if (rs && rs.y < -0.6 && Math.abs(rs.y) > Math.abs(rs.x)) this.tele = { c: right };
 		}
 		if (this.tele) {
-			const { c, via } = this.tele;
-			const released = !c.source || (via === 'stick' ? c.state.stick.length() < 0.3 : !c.state.trigger);
-			if (released) {
+			const { c } = this.tele;
+			if (!c.source || c.state.stick.length() < 0.3) {
 				const r = this.tele.result;
 				this.tele = null;
 				this.arc.hide();
@@ -708,7 +842,7 @@ export class XRExperience {
 				c.ray.updateMatrixWorld(true);
 				const origin = new THREE.Vector3().setFromMatrixPosition(c.ray.matrixWorld);
 				const dir = new THREE.Vector3(0, 0, -1).transformDirection(c.ray.matrixWorld);
-				this.tele.result = this.arc.update(origin, dir, (a, b) => this.hitSegment(a, b));
+				this.tele.result = this.arc.update(origin, dir, (a, b) => this.hitSegment(a, b, t));
 			}
 		}
 
@@ -721,6 +855,24 @@ export class XRExperience {
 			} else if (Math.abs(x) < 0.3) {
 				this.snapReady = true;
 			}
+		}
+
+		// Triggers: grab the space and pull yourself along (horizontally;
+		// the floor following keeps you on the floor).
+		const pull = new THREE.Vector3();
+		let pulling = 0;
+		for (const c of this.input.active()) {
+			if (c.state.down.trigger && !onUI.has(c) && !this.menu) c.pull = c.grip.position.clone();
+			if (!c.state.trigger) c.pull = null;
+			if (c.pull) {
+				pull.add(c.pull.clone().sub(c.grip.position));
+				c.pull.copy(c.grip.position);
+				pulling++;
+			}
+		}
+		if (pulling && !this.fade) {
+			pull.divideScalar(pulling).setY(0).applyAxisAngle(UP, this.rig.rotation.y);
+			this.rig.position.add(pull);
 		}
 
 		// Left stick: smooth locomotion relative to where the head looks.
@@ -744,12 +896,12 @@ export class XRExperience {
 	update(dt) {
 		if (!this.session || !this.model) return;
 		this.input.update();
-		this.placeOrb();
+		this.placeOrbs();
 		if (this.pendingRecentre && this.mode === 'dollhouse') {
 			const head = this.viewerMatrix();
 			if (head) {
 				this.pendingRecentre = false;
-				this.recentre(head);
+				this.recentre(head.clone().premultiply(this.rig.matrix));
 				// Open the menu once per visit so it gets discovered.
 				if (!this.menuShownOnce) { this.menuShownOnce = true; this.openMenu(head); }
 			}
@@ -759,10 +911,244 @@ export class XRExperience {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 /** A ray hit's face normal in world space. */
 function worldNormal(hit) {
 	if (!hit.face) return new THREE.Vector3(0, 1, 0);
 	return hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+}
+
+/** Inside-out sphere with a vertical colour gradient (horizon -> top). */
+function gradientSphere(r, top, horizon) {
+	const g = new THREE.SphereGeometry(r, 32, 16);
+	recolourSphere(g, r, top, horizon);
+	return g;
+}
+
+function recolourSphere(g, r, top, horizon) {
+	const t0 = new THREE.Color(top), h0 = new THREE.Color(horizon);
+	const pos = g.attributes.position;
+	const colors = new Float32Array(pos.count * 3);
+	const c = new THREE.Color();
+	for (let i = 0; i < pos.count; i++) {
+		const t = Math.max(0, pos.getY(i) / r);
+		c.copy(h0).lerp(t0, Math.pow(t, 0.7)).toArray(colors, i * 3);
+	}
+	g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+}
+
+/**
+ * Orb: a glowing core inside a faceted amber crystal, circled by two thin
+ * rings. animateOrb() makes it breathe, turn and shimmer.
+ */
+function makeOrb() {
+	const group = new THREE.Group();
+	group.name = 'menu-orb';
+	const core = new THREE.Mesh(new THREE.SphereGeometry(0.011, 16, 12), new THREE.MeshBasicMaterial({ color: 0xfff1d6 }));
+	const shellMat = new THREE.MeshLambertMaterial({ color: 0xe99a45, emissive: 0x8a3f0c, flatShading: true, transparent: true, opacity: 0.78, depthWrite: false });
+	const shell = new THREE.Mesh(new THREE.IcosahedronGeometry(0.024, 0), shellMat);
+	const ringMat = new THREE.MeshBasicMaterial({ color: 0xffd7a3, transparent: true, opacity: 0.9 });
+	const ring1 = new THREE.Mesh(new THREE.TorusGeometry(0.036, 0.0018, 6, 48), ringMat);
+	const ring2 = new THREE.Mesh(new THREE.TorusGeometry(0.031, 0.0016, 6, 48), ringMat);
+	// Larger invisible target so the orb is easy to hit with the laser.
+	const target = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 8), new THREE.MeshBasicMaterial({ visible: false }));
+	const body = new THREE.Group();
+	body.add(core, shell, ring1, ring2);
+	group.add(body, target);
+	group.position.set(0, 0.07, 0.075); // above the back of the hand, toward the wrist
+	return { group, body, core, shell, shellMat, ring1, ring2, ringMat, target, holder: null, armed: true, glow: 0, phase: Math.random() * 10 };
+}
+
+const ORB_AMBER = new THREE.Color(0xe99a45), ORB_BLUE = new THREE.Color(0x4d8dff);
+const ORB_EMBER = new THREE.Color(0x8a3f0c), ORB_EMBER_BLUE = new THREE.Color(0x173f8a);
+
+function animateOrb(o, time, hot) {
+	const t = time + o.phase;
+	o.glow += ((hot ? 1 : 0) - o.glow) * 0.2;
+	// Breathing: two slow waves, so it never looks mechanical.
+	const breathe = 1 + 0.1 * Math.sin(t * 2.1) + 0.04 * Math.sin(t * 5.3);
+	o.body.scale.setScalar(breathe * (1 + 0.4 * o.glow));
+	o.shell.rotation.set(t * 0.5, t * 0.8, 0);
+	o.ring1.rotation.set(Math.PI / 2 + 0.5 * Math.sin(t * 0.7), t * 1.3, 0);
+	o.ring2.rotation.set(0.6 * Math.sin(t * 0.9), -t * 1.1, Math.PI / 3);
+	o.shellMat.color.copy(ORB_AMBER).lerp(ORB_BLUE, o.glow);
+	o.shellMat.emissive.copy(ORB_EMBER).lerp(ORB_EMBER_BLUE, o.glow).multiplyScalar(0.8 + 0.4 * (0.5 + 0.5 * Math.sin(t * 3.2)));
+	o.ringMat.opacity = 0.6 + 0.35 * (0.5 + 0.5 * Math.sin(t * 2.6));
+}
+
+/**
+ * Gallery room around the plinth (VR dollhouse): dark oak floor with a pale
+ * rug, warm white walls with a dark skirting, a charcoal feature wall, tall
+ * windows on both sides, a skylight, and four large abstract canvases.
+ * Untextured parts are merged by material to keep draw calls low.
+ */
+function buildGallery() {
+	const g = new THREE.Group();
+	g.name = 'gallery';
+	const W = 12, D = 12, H = 4.2, T = 0.25; // inner size, wall thickness
+	const mats = {
+		wall: new THREE.MeshLambertMaterial({ color: 0xefece6 }),
+		feature: new THREE.MeshLambertMaterial({ color: 0x3a3f45 }),
+		dark: new THREE.MeshLambertMaterial({ color: 0x2b2f33 }),
+		ceiling: new THREE.MeshLambertMaterial({ color: 0xf7f6f3 }),
+		rug: new THREE.MeshLambertMaterial({ color: 0xb9b2a6 }), // mid tone, so the white plinth stands out
+	};
+	const parts = new Map(); // material -> geometries
+	const box = (mat, w, h, d, x, y, z) => {
+		const geo = new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+		if (!parts.has(mat)) parts.set(mat, []);
+		parts.get(mat).push(geo);
+	};
+
+	// Floor: dark oak planks; a pale rug under the plinth.
+	const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: plankTexture() }));
+	g.add(floor);
+	box(mats.rug, 5, 0.01, 4.2, 0, 0.005, 0.2);
+
+	// Front (far) wall: charcoal feature wall. Back wall: warm white.
+	box(mats.feature, W + 2 * T, H, T, 0, H / 2, -D / 2 - T / 2);
+	box(mats.wall, W + 2 * T, H, T, 0, H / 2, D / 2 + T / 2);
+	box(mats.dark, W, 0.12, 0.02, 0, 0.06, D / 2 - 0.01); // skirting
+
+	// Side walls with two tall windows each (2.6 m wide, 3 m high, sill 0.5 m).
+	const WIN_W = 2.6, WIN_H = 3, SILL = 0.5, centres = [-2.4, 2.4];
+	for (const side of [-1, 1]) {
+		const x = side * (W / 2 + T / 2);
+		const spans = [[-D / 2, centres[0] - WIN_W / 2], [centres[0] + WIN_W / 2, centres[1] - WIN_W / 2], [centres[1] + WIN_W / 2, D / 2]];
+		for (const [z0, z1] of spans) box(mats.wall, T, H, z1 - z0, x, H / 2, (z0 + z1) / 2);
+		for (const zc of centres) {
+			box(mats.wall, T, SILL, WIN_W, x, SILL / 2, zc); // below
+			box(mats.wall, T, H - SILL - WIN_H, WIN_W, x, SILL + WIN_H + (H - SILL - WIN_H) / 2, zc); // above
+			// Slim dark frame, a mullion and a transom
+			const fx = side * (W / 2 + 0.02), F = 0.06;
+			box(mats.dark, 0.08, F, WIN_W, fx, SILL + F / 2, zc);
+			box(mats.dark, 0.08, F, WIN_W, fx, SILL + WIN_H - F / 2, zc);
+			box(mats.dark, 0.08, WIN_H, F, fx, SILL + WIN_H / 2, zc - WIN_W / 2 + F / 2);
+			box(mats.dark, 0.08, WIN_H, F, fx, SILL + WIN_H / 2, zc + WIN_W / 2 - F / 2);
+			box(mats.dark, 0.06, WIN_H, 0.04, fx, SILL + WIN_H / 2, zc);
+			box(mats.dark, 0.06, 0.04, WIN_W, fx, SILL + 2.2, zc);
+		}
+		for (const [z0, z1] of spans) box(mats.dark, 0.02, 0.12, z1 - z0, side * (W / 2 - 0.01), 0.06, (z0 + z1) / 2); // skirting
+	}
+
+	// Ceiling with a 5 x 5 m skylight in the middle.
+	const S = 5, CT = 0.15;
+	box(mats.ceiling, W, CT, (D - S) / 2, 0, H + CT / 2, -(S + (D - S) / 2) / 2);
+	box(mats.ceiling, W, CT, (D - S) / 2, 0, H + CT / 2, (S + (D - S) / 2) / 2);
+	box(mats.ceiling, (W - S) / 2, CT, S, -(S + (W - S) / 2) / 2, H + CT / 2, 0);
+	box(mats.ceiling, (W - S) / 2, CT, S, (S + (W - S) / 2) / 2, H + CT / 2, 0);
+
+	for (const [mat, geoms] of parts) {
+		const m = new THREE.Mesh(mergeGeometries(geoms), mat);
+		g.add(m);
+		for (const geo of geoms) geo.dispose();
+	}
+
+	// Canvases: big one on the feature wall, one behind you, one on each side.
+	const canvas = (w, h, seed, x, y, z, ry) => {
+		const c = new THREE.Group();
+		const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.08, h + 0.08, 0.05), mats.dark);
+		const art = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshLambertMaterial({ map: artTexture(seed, w / h) }));
+		art.position.z = 0.026;
+		c.add(frame, art);
+		c.position.set(x, y, z);
+		c.rotation.y = ry;
+		g.add(c);
+	};
+	canvas(3.6, 2.2, 1, 0, 2.3, -D / 2 + 0.03, 0);
+	canvas(3.0, 1.9, 2, 0, 2.1, D / 2 - 0.03, Math.PI);
+	canvas(1.3, 1.9, 3, -W / 2 + 0.03, 2.0, 0, Math.PI / 2);
+	canvas(1.3, 1.9, 4, W / 2 - 0.03, 2.0, 0, -Math.PI / 2);
+	return g;
+}
+
+/** Dark oak planks, drawn once on a canvas (2 m tile, 25 cm planks). */
+function plankTexture() {
+	if (typeof document === 'undefined') return null;
+	const c = document.createElement('canvas');
+	c.width = c.height = 1024;
+	const ctx = c.getContext('2d');
+	const rnd = seeded(7);
+	const PW = 128;
+	for (let col = 0; col < 8; col++) {
+		let y = -rnd() * 600;
+		while (y < 1024) {
+			const len = 400 + rnd() * 500;
+			const l = 34 + rnd() * 10, s = 22 + rnd() * 8;
+			ctx.fillStyle = `hsl(28, ${s}%, ${l}%)`;
+			ctx.fillRect(col * PW, y, PW, len);
+			// Grain
+			ctx.strokeStyle = 'rgba(30, 18, 8, 0.12)';
+			ctx.lineWidth = 2;
+			for (let k = 0; k < 6; k++) {
+				const gx = col * PW + 10 + rnd() * (PW - 20);
+				ctx.beginPath(); ctx.moveTo(gx, y); ctx.bezierCurveTo(gx + 6, y + len / 3, gx - 6, y + 2 * len / 3, gx, y + len); ctx.stroke();
+			}
+			ctx.fillStyle = 'rgba(20, 12, 6, 0.6)';
+			ctx.fillRect(col * PW, y, PW, 3); // plank end
+			y += len;
+		}
+		ctx.fillStyle = 'rgba(20, 12, 6, 0.6)';
+		ctx.fillRect(col * PW, 0, 3, 1024); // seam
+	}
+	const tex = new THREE.CanvasTexture(c);
+	tex.colorSpace = THREE.SRGBColorSpace;
+	tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+	tex.repeat.set(6, 6);
+	tex.anisotropy = 4;
+	return tex;
+}
+
+/** Original abstract painting: soft colour fields, a disc, or bands. */
+function artTexture(seed, aspect) {
+	if (typeof document === 'undefined') return null;
+	const c = document.createElement('canvas');
+	c.width = 1024;
+	c.height = Math.round(1024 / aspect);
+	const ctx = c.getContext('2d');
+	const { width: w, height: h } = c;
+	const rnd = seeded(seed * 97);
+	const palettes = [
+		['#efe6d8', '#c65d3b', '#e9b44c', '#1f4e5f'],
+		['#e9e4da', '#2e5e4e', '#d9c8a9', '#a33b2a'],
+		['#f1ece4', '#3d5a80', '#98c1d9', '#ee6c4d'],
+		['#ece6dc', '#6b4e71', '#f2d0a4', '#3a7d44'],
+	];
+	const [bg, a, b, d] = palettes[seed % palettes.length];
+	ctx.fillStyle = bg;
+	ctx.fillRect(0, 0, w, h);
+	const soft = (x, y, rw, rh, col) => { ctx.filter = 'blur(6px)'; ctx.fillStyle = col; ctx.fillRect(x, y, rw, rh); ctx.filter = 'none'; };
+	const style = seed % 3;
+	if (style === 0) { // stacked colour fields
+		soft(w * 0.08, h * 0.08, w * 0.84, h * 0.45, a);
+		soft(w * 0.08, h * 0.58, w * 0.84, h * 0.22, b);
+		soft(w * 0.08, h * 0.84, w * 0.84, h * 0.08, d);
+	} else if (style === 1) { // disc over a horizon band
+		soft(0, h * (0.55 + rnd() * 0.1), w, h, d);
+		ctx.fillStyle = a;
+		ctx.beginPath(); ctx.arc(w * (0.35 + rnd() * 0.3), h * 0.42, Math.min(w, h) * 0.24, 0, Math.PI * 2); ctx.fill();
+		ctx.strokeStyle = b; ctx.lineWidth = 14;
+		ctx.beginPath(); ctx.arc(w * 0.5, h * 1.2, w * 0.7, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
+	} else { // diagonal bands
+		ctx.save();
+		ctx.translate(w / 2, h / 2); ctx.rotate(-0.5);
+		const cols = [a, b, d, b, a];
+		for (let i = 0; i < 5; i++) { ctx.fillStyle = cols[i]; ctx.fillRect(-w, -h * 0.6 + i * h * 0.26, w * 2, h * 0.16); }
+		ctx.restore();
+	}
+	const tex = new THREE.CanvasTexture(c);
+	tex.colorSpace = THREE.SRGBColorSpace;
+	tex.anisotropy = 4;
+	return tex;
+}
+
+/** Small seeded random generator, so the room looks the same every time. */
+function seeded(s) {
+	let x = s >>> 0 || 1;
+	return () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296);
 }
 
 function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }

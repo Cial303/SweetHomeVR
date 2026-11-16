@@ -167,8 +167,8 @@ export class TeleportArc {
 
 	/**
 	 * Traces the arc from `origin` along `dir` and draws it.
-	 * hitSegment(a, b) returns { point, normal (world) } for the first hit
-	 * between a and b, or null. Returns { valid, point } (point may be null).
+	 * hitSegment(a, b) returns { point, normal (world), valid? } for the first
+	 * hit between a and b, or null (valid defaults to an upward-facing normal). Returns { valid, point } (point may be null).
 	 */
 	update(origin, dir, hitSegment) {
 		const v = dir.clone().normalize().multiplyScalar(ARC_SPEED);
@@ -182,7 +182,7 @@ export class TeleportArc {
 			pts.push(hit ? hit.point.clone() : b.clone());
 			a.copy(b);
 		}
-		const valid = !!hit && hit.normal.y > 0.7;
+		const valid = !!hit && (hit.valid ?? hit.normal.y > 0.7);
 		const color = valid ? OK_COLOR : BAD_COLOR;
 
 		// Dots evenly spaced along the polyline.

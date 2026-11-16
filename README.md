@@ -30,23 +30,24 @@ Supported files:
 
 ## In the headset
 
-Press **Enter VR** (or **Enter AR** for passthrough) once a model is open.
+Press **Enter VR** once a model is open. In the headset, the menu switches between VR and passthrough.
 
-**Menu:** a small orange orb floats over your left hand. Point at it and pull the trigger, or press **A** or **X**, to open the menu in front of you. **B** / **Y** or a click elsewhere closes it. It opens by itself the first time.
+**Menu:** a glowing orb floats over each hand. Point at one with the other hand and pull the trigger, touch it with the other controller, or press **A** or **X**: the menu opens in front of you, with a drawing of the controllers and what each button does. **B** / **Y** or a click elsewhere closes it. It opens by itself the first time.
 
 **Dollhouse**
-- The home stands on a museum-style plinth in front of you: the model is about 1.2 m across, with 40 cm of table around it.
+- The home stands on a low museum plinth in a gallery room. You see it as if you were about 2 m tall, so it's easy to look into the rooms.
 - **Thumbstick** left/right rotates it; up/down zooms it (½× to 4×).
 - **Grip** and move your hand to pick it up and move it.
 - Point the **laser** at it: an orange figure shows where you'd stand. **Trigger** takes you there at real size.
-- Menu: **Walk in** (at Sweet Home 3D's virtual visitor position), **Ceilings on/off**, **Recentre**, **Exit VR**.
+- Menu: **Walk in** (at Sweet Home 3D's virtual visitor position), **Ceilings on/off**, **View: VR / passthrough**, **Recentre**, **Exit VR**.
 
 **Inside, at 1:1**
-- **Left stick** walks where you look. Walls don't stop you; stairs and levels are followed.
-- **Right stick** left/right turns in steps (30°, or 45° from the menu).
-- **Right stick forward**, or hold a **trigger**, and aim: a blue ring shows where you'll land (red: not a floor). Let go to jump there.
+- **Left stick** walks where you look. You walk through walls and furniture, and stay on the floor; stairs and levels are followed.
+- **Hold a trigger** and move your hand to pull yourself along, as if grabbing the room.
+- **Right stick** left/right turns in steps (15°, 30° or 45°, set in the menu).
+- **Right stick forward** and aim: a blue ring shows where you'll land (red on a wall). Let go to jump there.
 - **B** or **Y** goes back to the dollhouse.
-- Menu: **Dollhouse**, **Ceilings on/off**, **Turn 30° / 45°**, **Exit VR**.
+- Menu: **Dollhouse**, **Ceilings on/off**, **View**, **Turn**, **Height** (yours, 1.4, 1.7 or 2.0 m), **Exit VR**.
 
 ## What gets shown from a Sweet Home 3D file
 
@@ -89,9 +90,9 @@ Put your own test homes in `tests/fixtures/private/` (ignored by git). Open a mo
 index.html        2D UI and import map
 config.js         Dropbox app key, defaults
 js/main.js        2D page, renderer, loading, UI
-js/xr.js          VR/AR session: dollhouse, walk mode, menu orb
+js/xr.js          VR/AR session: gallery and dollhouse, walk mode, menu orbs
 js/xr-input.js    controllers, lasers, buttons, thumbsticks, teleport arc
-js/panel.js       canvas-texture VR menu
+js/panel.js       canvas-texture VR menu and controls card
 js/optimise.js    merge geometry by material, BVH for raycasts
 js/storage.js     recent models (IndexedDB)
 js/sh3d.js        SH3D parser and scene builder (no DOM; Node-testable)

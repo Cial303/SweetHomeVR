@@ -24,7 +24,7 @@ js/sh3d.js        SH3D parser and scene builder (pure functions, Node-testable)
 js/formats.js     OBJ / zip / GLB / DAE / 3DS loading and unit detection
 js/optimise.js    merge-by-material and BVH
 js/xr-input.js    controllers, rays, thumbsticks, teleport arc, snap turn
-js/panel.js       canvas-texture VR menu
+js/panel.js       canvas-texture VR menu and controls card
 js/storage.js     IndexedDB recent files
 vendor/           vendored dependencies + licences
 tests/            Node tests (node:test)
