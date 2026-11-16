@@ -257,11 +257,24 @@ s = await page.evaluate(async () => {
 		if (ray.intersectObjects(x.model.layers.walls.children, false).length) continue;
 		const seg = x.hitSegment(h.point.clone().setY(h.point.y + 0.5), h.point.clone().setY(-0.05), t); // from above the top down past the floor
 		const under = new THREE.Raycaster(h.point.clone().setY(h.point.y + 0.1), new THREE.Vector3(0, -1, 0)).intersectObjects([...t.walkable], false)[0];
-		return { top: +h.point.y.toFixed(2), arcLands: seg ? +seg.point.y.toFixed(2) : null, arcValid: seg?.valid, floorBelow: under ? +under.point.y.toFixed(2) : null };
+		return { top: +h.point.y.toFixed(2), topPoint: h.point.toArray(), arcLands: seg ? +seg.point.y.toFixed(2) : null, arcValid: seg?.valid, floorBelow: under ? +under.point.y.toFixed(2) : null };
 	}
 	return null;
 });
-check('arc goes through furniture to the floor', s && s.arcValid === true && s.floorBelow !== null && s.floorBelow < s.top - 0.25 && Math.abs(s.arcLands - s.floorBelow) < 0.01, JSON.stringify(s));
+check('one level: arc goes through furniture to the floor', s && s.arcValid === true && s.floorBelow !== null && s.floorBelow < s.top - 0.25 && Math.abs(s.arcLands - s.floorBelow) < 0.01, JSON.stringify(s));
+
+// More than one level: furniture (and so stairs) can be stood on.
+s = await page.evaluate(async (top) => {
+	const THREE = await import('three');
+	const x = window.__svr.xr;
+	const was = x.model.multiLevel;
+	x.model.multiLevel = true;
+	const t = x.targets(), p = new THREE.Vector3(...top);
+	const seg = x.hitSegment(p.clone().setY(p.y + 0.5), p.clone().setY(-0.05), t);
+	x.model.multiLevel = was;
+	return { arcLands: seg ? +seg.point.y.toFixed(2) : null, arcValid: seg?.valid };
+}, s.topPoint);
+check('several levels: you can stand on furniture', s.arcValid === true && s.arcLands > 0.25, JSON.stringify(s));
 
 // Left stick forward: walk at about 0.75 m/s where the head looks.
 h0 = (await state()).head;

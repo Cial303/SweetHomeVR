@@ -42,7 +42,7 @@ Press **Enter VR** once a model is open. In the headset, the menu switches betwe
 - Menu: **Walk in** (at Sweet Home 3D's virtual visitor position), **Ceilings on/off**, **View: VR / passthrough**, **Recentre**, **Exit VR**.
 
 **Inside, at 1:1**
-- **Left stick** walks where you look. You walk through walls and furniture, and stay on the floor; stairs and levels are followed.
+- **Left stick** walks where you look. Walls don't stop you. In a one-level home you stay on the floor and walk through furniture; in a home with several levels you can step onto anything, so stairs work.
 - **Hold a trigger** and move your hand to pull yourself along, as if grabbing the room.
 - **Right stick** left/right turns in steps (15°, 30° or 45°, set in the menu).
 - **Right stick forward** and aim: a blue ring shows where you'll land (red on a wall). Let go to jump there.

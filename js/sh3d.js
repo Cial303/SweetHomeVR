@@ -13,9 +13,6 @@
 
 import * as THREE from 'three';
 
-/** Furniture names that mean a staircase (en, fr, es/ca, de, it, nl). */
-const STAIR_NAME = /stair|escalier|escalera|\bescala\b|treppe|\bscala\b|\btrap\b/i;
-
 // ---------------------------------------------------------------------------
 // Minimal XML reader
 // ---------------------------------------------------------------------------
@@ -139,8 +136,6 @@ export function parseHome(xmlText) {
 		return {
 			kind: n.name === 'doorOrWindow' ? 'door' : n.name === 'light' ? 'light' : 'piece',
 			id: a.id || '', name: a.name || '', model: a.model || null, levelId,
-			// Staircases (cut-out shape set, or named like one) are walkable in walk mode.
-			staircase: a.staircaseCutOutShape !== undefined || STAIR_NAME.test(a.name || ''),
 			x: num(a, 'x'), y: num(a, 'y'), elevation: num(a, 'elevation'), angle: num(a, 'angle'),
 			width: num(a, 'width', 1), depth: num(a, 'depth', 1), height: num(a, 'height', 1),
 			pitch: num(a, 'pitch'), roll: num(a, 'roll'),
@@ -318,15 +313,13 @@ export async function buildHome(home, opts = {}) {
 	// Furniture first: door/window placement feeds the wall openings.
 	const furniture = new THREE.Group();
 	furniture.name = 'furniture';
-	const stairs = new THREE.Group();
-	stairs.name = 'stairs';
 	const placed = [];
 	const modelCache = new Map();
 	const normCache = new Map();
 	let done = 0;
 	for (const piece of home.pieces) {
 		const obj = await buildPiece(piece, { home, loadModel, getTexture, modelCache, normCache, levelElevation });
-		(piece.staircase ? stairs : furniture).add(obj.object);
+		furniture.add(obj.object);
 		placed.push({ piece, effHeight: obj.effHeight });
 		opts.onProgress?.(++done, home.pieces.length);
 	}
@@ -335,7 +328,7 @@ export async function buildHome(home, opts = {}) {
 	const wallsGroup = buildWalls(home, doors, getTexture, levelElevation);
 	const { floors, ceilings } = buildRooms(home, getTexture, levelElevation);
 
-	root.add(wallsGroup.group, floors, ceilings, furniture, stairs);
+	root.add(wallsGroup.group, floors, ceilings, furniture);
 
 	// Ground: 3 m larger than the model on every side, just below zero.
 	root.updateMatrixWorld(true);

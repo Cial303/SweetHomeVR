@@ -125,9 +125,12 @@ Resolve MTL and texture paths relative to the model's folder through a `LoadingM
 - The model is at real scale. Move a rig `Group` that contains the camera and controllers.
 - Left stick: smooth locomotion relative to head direction, about 0.75 m/s (halved at the user's request).
 - Right stick left/right: snap turn 15°, 30° or 45° (menu option, remembered; 30° by default).
-- Right stick forward: show a **parabolic teleport arc** with a landing ring. The arc passes through furniture and stops at walls, floors, stairs and the ground; it is valid (blue) only on a walkable surface with normal.y > 0.7, otherwise red (walls). Release to teleport, with a short fade.
+- Right stick forward: show a **parabolic teleport arc** with a landing ring. Walls always stop it (red). It is valid (blue) on a walkable surface (see below) with normal.y > 0.7. In a one-level home it passes through furniture to the floor. Release to teleport, with a short fade.
 - Holding either trigger grabs the space: moving the hand pulls the user along horizontally (changed at the user's request from trigger-to-teleport). Both hands average.
-- Floor following: each frame, cast down from 0.6 m above the feet. If a walkable floor (room floors, the ground and staircases) is within ±0.6 m, adopt its height (this handles stairs and levels). Furniture is never stood on: you walk through beds, tables and sofas (at the user's request). Staircases are pieces with a `staircaseCutOutShape` or a staircase name, kept in their own layer. Walls don't block movement. Models without rooms (OBJ, GLB) are walkable everywhere.
+- Floor following: each frame, cast down from 0.6 m above the feet. If a walkable surface is within ±0.6 m, adopt its height. Walls don't block movement. Walkable (decided with the user):
+  - **One level** (one distinct level elevation, or no levels): room floors and the ground only. You stay on the floor and walk through beds, tables and sofas.
+  - **More than one level:** anything except walls, so staircases (which are furniture) work, at the cost of stepping onto low furniture.
+  - Models without rooms (OBJ, GLB): anything except walls.
 - Person height: menu option Yours / 1.4 / 1.7 / 2.0 m (remembered). For a set height the rig is raised or lowered so the eyes are 11 cm below that height, measured when you enter walk mode or change the option.
 - **B or Y:** back to dollhouse (or closes the menu if it is open).
 - **A or X** (or an orb): toggle a menu in front of the head with Dollhouse, Ceilings on/off, View VR/passthrough, Turn 15°/30°/45°, Height, and Exit VR. Lasers are hidden while walking, except while the menu is open or a laser points at an orb.

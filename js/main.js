@@ -140,7 +140,7 @@ async function load(files, label, source = { type: 'file' }) {
 		await new Promise((r) => setTimeout(r, 0)); // let the status paint
 		// ?nomerge (debugging only): show the scene exactly as loaded.
 		const merged = new URLSearchParams(location.search).has('nomerge')
-			? { group: result.root, layers: Object.fromEntries(['main', 'walls', 'floors', 'ceilings', 'ground', 'stairs'].map((n) => [n, result.root.getObjectByName(n === 'main' ? 'furniture' : n) || new THREE.Group()])), stats: null }
+			? { group: result.root, layers: Object.fromEntries(['main', 'walls', 'floors', 'ceilings', 'ground'].map((n) => [n, result.root.getObjectByName(n === 'main' ? 'furniture' : n) || new THREE.Group()])), stats: null }
 			: optimiseModel(result.root);
 		disposeCurrent();
 		current = { ...result, root: merged.group, layers: merged.layers, merged: merged.stats };
@@ -149,7 +149,10 @@ async function load(files, label, source = { type: 'file' }) {
 		const b = current.bounds;
 		centerer.position.set(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);
 		anchor.updateMatrixWorld(true);
-		xr.setModel({ group: current.root, layers: current.layers, bounds: current.bounds, observer: current.observer, skyColor: result.home?.skyColor });
+		// More than one level (distinct elevations): walk mode lets you stand on
+		// anything, so stairs work. One level: you stay on the floor.
+		const elevations = new Set([...(result.home?.levels.values() ?? [])].filter((l) => l.viewable).map((l) => l.elevation));
+		xr.setModel({ group: current.root, layers: current.layers, bounds: current.bounds, observer: current.observer, skyColor: result.home?.skyColor, multiLevel: elevations.size > 1 });
 		if (result.home) scene.background = new THREE.Color(result.home.skyColor);
 		frame('iso');
 		updateXRButtons();

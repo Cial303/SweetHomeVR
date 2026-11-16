@@ -147,12 +147,3 @@ test('OBJ faces mixing corners with and without (missing) normals get no NaN nor
 	assert.ok(n.array.every(Number.isFinite), 'finite normals');
 	for (let i = 0; i < n.count; i++) assert.ok(Math.abs(Math.abs(n.getY(i)) - 1) < 1e-6, 'flat face normal is vertical');
 });
-
-test('staircases are recognised (cut-out shape or name), other furniture is not', () => {
-	const home = parseHome(`<home><pieceOfFurniture id='a' name='Staircase' x='0' y='0' width='100' depth='100' height='250'/>
-		<pieceOfFurniture id='b' name='Spiral' staircaseCutOutShape='M0,0 L1,0 L1,1 Z' x='0' y='0' width='100' depth='100' height='250'/>
-		<pieceOfFurniture id='c' name='Escala' x='0' y='0' width='100' depth='100' height='250'/>
-		<pieceOfFurniture id='d' name='Bed' x='0' y='0' width='100' depth='100' height='50'/>
-		<pieceOfFurniture id='e' name='Trapezoid table' x='0' y='0' width='100' depth='100' height='75'/></home>`);
-	assert.deepEqual(home.pieces.map((p) => p.staircase), [true, true, true, false, false]);
-});

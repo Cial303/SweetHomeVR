@@ -5,8 +5,9 @@
 //              move, laser + trigger to jump in at 1:1.
 //   walk       the home at 1:1: left stick walks, right stick snap-turns,
 //              right stick forward aims a teleport arc, a held trigger grabs
-//              the space so you can pull yourself along. You stay on floors
-//              and stairs, never on furniture. B or Y goes back.
+//              the space so you can pull yourself along. In a one-level home
+//              you stay on the floor and walk through furniture; with more
+//              levels you can stand on anything, so stairs work. B or Y goes back.
 //
 // One session for both views: when the browser supports it, an
 // immersive-ar session is used and "VR" simply draws an opaque world over
@@ -259,7 +260,7 @@ export class XRExperience {
 	// Model and session
 	// -----------------------------------------------------------------------
 
-	/** model: { group, layers, bounds (Box3, model space, no ground), observer, skyColor } */
+	/** model: { group, layers, bounds (Box3, model space, no ground), observer, skyColor, multiLevel } */
 	setModel(model) {
 		this.model = model;
 		this.centerer.add(...this.markers);
@@ -582,20 +583,19 @@ export class XRExperience {
 	/**
 	 * Mesh sets: what the laser can hit, what counts as floor in the
 	 * dollhouse, what the teleport arc hits, and what you can stand on in
-	 * walk mode. Walking ignores furniture: you stand on room floors, the
-	 * ground and staircases, and the arc flies through furniture to the floor
-	 * (walls still stop it). Models without rooms (OBJ, GLB) are walkable
-	 * everywhere.
+	 * walk mode. One level: you stand on room floors and the ground only,
+	 * and the arc flies through furniture to the floor. More than one level
+	 * (or no rooms, as in OBJ and GLB files): you can stand on anything but
+	 * walls, so stairs work. Walls always stop the arc.
 	 */
 	targets() {
 		const L = this.model.layers;
-		const stairs = L.stairs?.children ?? [];
 		const walls = L.walls?.children ?? [];
-		const hasRooms = L.floors.children.length > 0 || stairs.length > 0;
-		const walkable = [...L.floors.children, ...stairs, ...L.ground.children, ...(hasRooms ? [] : L.main.children)];
+		const anywhere = this.model.multiLevel || L.floors.children.length === 0;
+		const walkable = [...L.floors.children, ...L.ground.children, ...(anywhere ? L.main.children : [])];
 		return {
-			pointable: [...L.main.children, ...walls, ...L.floors.children, ...stairs],
-			floors: [...L.floors.children, ...stairs, ...L.ground.children],
+			pointable: [...L.main.children, ...walls, ...L.floors.children],
+			floors: [...L.floors.children, ...L.ground.children],
 			solid: [...walls, ...walkable],
 			walkable: new Set(walkable),
 		};
@@ -770,8 +770,8 @@ export class XRExperience {
 
 	/**
 	 * Floor following: cast down from STEP above the feet; adopt a walkable
-	 * floor (rooms, ground, stairs) within ±STEP. Furniture is ignored, so you
-	 * walk through beds and tables, not over them. Walls don't block movement.
+	 * surface (see targets()) within ±STEP, which handles stairs and levels.
+	 * Walls don't block movement.
 	 */
 	followFloor(dt) {
 		const head = this.headWorld();
