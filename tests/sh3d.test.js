@@ -138,3 +138,12 @@ test('OBJ concave polygons are triangulated without filling the hole (door frame
 	}
 	assert.ok(Math.abs(area - 9) < 1e-6, `area ${area}`); // 3x4 minus the 1x3 doorway
 });
+
+test('OBJ faces mixing corners with and without (missing) normals get no NaN normals', () => {
+	// Like Sweet Home 3D's glass door cabinet: no "vn" lines, yet some corners say //n.
+	const obj = ['v 0 0 0', 'v 1 0 0', 'v 1 0 1', 'v 0 0 1', 'v 0.5 0 1.5', 'f 1 2 3//7 5//8 4//9', 'f 1 2//3 3'].join('\n');
+	const mesh = new OBJLoader().parse(prepareObjText(obj)).children[0];
+	const n = mesh.geometry.attributes.normal;
+	assert.ok(n.array.every(Number.isFinite), 'finite normals');
+	for (let i = 0; i < n.count; i++) assert.ok(Math.abs(Math.abs(n.getY(i)) - 1) < 1e-6, 'flat face normal is vertical');
+});

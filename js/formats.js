@@ -217,6 +217,7 @@ export async function loadModelEntry(store, path) {
  */
 export function prepareObjText(text) {
 	const verts = [];
+	let vtCount = 0, vnCount = 0;
 	const out = [];
 	const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
 	for (const line of text.split(/\r?\n/)) {
@@ -224,10 +225,18 @@ export function prepareObjText(text) {
 		if (t.startsWith('v ')) {
 			const p = t.split(/\s+/);
 			verts.push(new THREE.Vector3(+p[1], +p[2], +p[3]));
+		} else if (t.startsWith('vt ')) {
+			vtCount++;
+		} else if (t.startsWith('vn ')) {
+			vnCount++;
 		} else if (/^[lp]\s/.test(t)) {
 			continue;
 		} else if (t.startsWith('f ')) {
-			const toks = t.split(/\s+/).slice(1).filter(Boolean);
+			let toks = t.split(/\s+/).slice(1).filter(Boolean);
+			if (t.includes('/')) {
+				const clean = cleanFaceRefs(toks, vtCount, vnCount);
+				if (clean !== toks) { toks = clean; if (toks.length < 4) { out.push(`f ${toks.join(' ')}`); continue; } }
+			}
 			if (toks.length >= 4) {
 				const tris = triangulateFace(toks, verts, a, b, c);
 				if (tris) { for (const tri of tris) out.push(`f ${tri.join(' ')}`); continue; }
@@ -236,6 +245,28 @@ export function prepareObjText(text) {
 		out.push(line);
 	}
 	return out.join('\n');
+}
+
+/**
+ * Face corners are "v", "v/vt", "v//vn" or "v/vt/vn". OBJLoader only checks
+ * the first corner of each triangle for vt/vn, so a face that mixes corners
+ * with and without them, or points at normals that don't exist, ends up with
+ * NaN normals (black) once triangles start at a different corner. Keep a
+ * texture/normal reference only if every corner has a valid one.
+ * Returns the same array when nothing needs changing.
+ */
+function cleanFaceRefs(toks, vtCount, vnCount) {
+	const parts = toks.map((tok) => tok.split('/'));
+	const valid = (s, count) => {
+		if (s === undefined || s === '') return false;
+		const i = parseInt(s, 10);
+		return Number.isFinite(i) && i !== 0 && (i > 0 ? i <= count : count + i >= 0);
+	};
+	const keepVt = parts.every((p) => valid(p[1], vtCount));
+	const keepVn = parts.every((p) => valid(p[2], vnCount));
+	const hasVt = parts.some((p) => p[1]), hasVn = parts.some((p) => p[2]);
+	if ((keepVt || !hasVt) && (keepVn || !hasVn)) return toks;
+	return parts.map((p) => p[0] + (keepVt ? `/${p[1]}` : keepVn ? '/' : '') + (keepVn ? `/${p[2]}` : ''));
 }
 
 /** Returns triangles (arrays of 3 face tokens) for an OBJ polygon, or null to keep it as is. */

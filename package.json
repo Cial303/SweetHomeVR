@@ -9,10 +9,12 @@
     "fixtures": "node scripts/fetch-fixtures.js",
     "test": "node --import ./tests/register.js --test tests/*.test.js",
     "serve": "node scripts/serve.js",
-    "shots": "node scripts/screenshots.js"
+    "shots": "node scripts/screenshots.js",
+    "xr-test": "node scripts/xr-test.js"
   },
   "devDependencies": {
     "fflate": "0.8.3",
+    "iwer": "2.7.0",
     "playwright": "1.65.1",
     "three": "0.187.0",
     "three-mesh-bvh": "0.9.18"

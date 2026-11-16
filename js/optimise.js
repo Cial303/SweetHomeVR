@@ -1,0 +1,143 @@
+// Performance pass run once after loading (Quest 2 is a phone GPU):
+//
+// 1. Bake every mesh's world transform into its vertices and merge all
+//    geometry that shares an equivalent material into one mesh
+//    (BufferGeometryUtils.mergeGeometries). Materials are deduplicated by
+//    type, colour, texture, opacity and side. A home with thousands of
+//    pieces ends up with one draw call per distinct material.
+// 2. Build a three-mesh-bvh bounds tree on each merged mesh, so every
+//    raycast (laser pointer, floor marker, teleport, floor following) is fast.
+//
+// Layers are kept apart so they can be shown, hidden or raycast separately:
+//   main     walls and furniture
+//   floors   room floors (where the "stand here" marker lands)
+//   ceilings room ceilings (toggle in VR)
+//   ground   the ground plane around the home
+
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
+
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
+
+export const LAYERS = ['main', 'floors', 'ceilings', 'ground'];
+
+/** Which layer an object of the loaded scene belongs to, from its top-level group name. */
+function layerOf(obj, root) {
+	let o = obj;
+	while (o.parent && o.parent !== root) o = o.parent;
+	switch (o.name) {
+		case 'floors': return 'floors';
+		case 'ceilings': return 'ceilings';
+		case 'ground': return 'ground';
+		default: return 'main';
+	}
+}
+
+function materialKey(m) {
+	const c = m.color ? m.color.getHexString() : '';
+	const e = m.emissive ? m.emissive.getHexString() : '';
+	return [m.type, c, e, m.map ? m.map.uuid : '', m.opacity.toFixed(3), m.transparent, m.side, m.vertexColors, m.alphaTest,
+		m.shininess ?? '', m.specular ? m.specular.getHexString() : ''].join('|');
+}
+
+/**
+ * A copy of one draw range of a non-indexed geometry, with position, normal,
+ * uv (and color if wanted) only. `base` must be non-indexed.
+ */
+function extract(base, start, count, wantColor) {
+	const total = base.attributes.position.count;
+	const from = Math.max(0, start), to = Math.min(total, start + count);
+	const g = new THREE.BufferGeometry();
+	for (const name of ['position', 'normal', 'uv', ...(wantColor ? ['color'] : [])]) {
+		const attr = base.attributes[name];
+		if (!attr) continue;
+		const s = attr.itemSize;
+		const src = attr.isInterleavedBufferAttribute ? null : attr.array;
+		const arr = src && src instanceof Float32Array && !attr.normalized
+			? src.slice(from * s, to * s)
+			: Float32Array.from({ length: (to - from) * s }, (_, i) => attr.getComponent(from + Math.floor(i / s), i % s));
+		g.setAttribute(name, new THREE.BufferAttribute(arr, s));
+	}
+	if (!g.attributes.normal) g.computeVertexNormals();
+	const n = g.attributes.position.count;
+	if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
+	if (wantColor && !g.attributes.color) g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3).fill(1), 3));
+	return g;
+}
+
+/** Reverses triangle winding (needed after baking a mirrored transform). */
+function flipWinding(g) {
+	for (const attr of Object.values(g.attributes)) {
+		const a = attr.array, s = attr.itemSize;
+		for (let t = 0; t < attr.count; t += 3) {
+			for (let k = 0; k < s; k++) {
+				const i1 = (t + 1) * s + k, i2 = (t + 2) * s + k;
+				const tmp = a[i1]; a[i1] = a[i2]; a[i2] = tmp;
+			}
+		}
+	}
+}
+
+/**
+ * Merges the loaded scene. `root` is the object returned by the loaders
+ * (in metres). Returns { group, layers: { main, floors, ceilings, ground },
+ * stats: { drawCalls, triangles, materials, sourceMeshes } }.
+ */
+export function optimiseModel(root) {
+	root.updateMatrixWorld(true);
+	const buckets = new Map(); // `${layer}#${materialKey}` -> { layer, material, geoms: [] }
+	let sourceMeshes = 0;
+
+	root.traverseVisible((o) => {
+		if (!o.isMesh || !o.geometry?.attributes?.position) return;
+		sourceMeshes++;
+		const layer = layerOf(o, root);
+		const m = o.matrixWorld;
+		const mirrored = m.determinant() < 0;
+		const g0 = o.geometry;
+		const base = g0.index ? g0.toNonIndexed() : g0; // once per mesh
+		const total = base.attributes.position.count;
+		const parts = Array.isArray(o.material)
+			? (g0.groups.length ? g0.groups.map((gr) => ({ start: gr.start, count: gr.count, material: o.material[gr.materialIndex] })) : [{ start: 0, count: total, material: o.material[0] }])
+			: [{ start: 0, count: total, material: o.material }];
+		for (const part of parts) {
+			if (!part.material || part.material.visible === false || part.count < 3) continue;
+			// Group ranges index the original (possibly indexed) geometry; after
+			// toNonIndexed() vertex i corresponds to index position i, so the
+			// same start/count still applies.
+			const g = extract(base, part.start, part.count, !!part.material.vertexColors);
+			g.applyMatrix4(m);
+			if (mirrored) flipWinding(g);
+			const key = `${layer}#${materialKey(part.material)}`;
+			let b = buckets.get(key);
+			if (!b) { b = { layer, material: part.material, geoms: [] }; buckets.set(key, b); }
+			b.geoms.push(g);
+		}
+	});
+
+	const group = new THREE.Group();
+	group.name = root.name || 'model';
+	const layers = {};
+	for (const name of LAYERS) {
+		layers[name] = new THREE.Group();
+		layers[name].name = name;
+		group.add(layers[name]);
+	}
+	let triangles = 0, drawCalls = 0;
+	for (const b of buckets.values()) {
+		const merged = b.geoms.length === 1 ? b.geoms[0] : mergeGeometries(b.geoms, false);
+		if (!merged) continue;
+		merged.computeBoundingBox();
+		merged.computeBoundingSphere();
+		if (b.layer !== 'ceilings') merged.computeBoundsTree(); // ceilings are never raycast
+		const mesh = new THREE.Mesh(merged, b.material);
+		mesh.matrixAutoUpdate = false;
+		layers[b.layer].add(mesh);
+		triangles += merged.attributes.position.count / 3;
+		drawCalls++;
+	}
+	return { group, layers, stats: { drawCalls, triangles: Math.round(triangles), materials: buckets.size, sourceMeshes } };
+}

@@ -1,11 +1,13 @@
 // Sweet Home VR: app entry point.
-// Phase 1: 2D page with an orbit-controlled dollhouse preview.
-// The XR states (dollhouse / walk) arrive in phases 2 and 3.
+// 2D page (home screen) with an orbit-controlled dollhouse preview, file
+// loading, and the Enter VR / Enter AR buttons. The XR modes live in xr.js.
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CONFIG } from '../config.js';
 import { openFiles, UserError } from './formats.js';
+import { optimiseModel } from './optimise.js';
+import { XRExperience } from './xr.js';
 import { listRecents, getRecent, addRecent, removeRecent, getLastLink, setLastLink } from './storage.js';
 
 const $ = (id) => document.getElementById(id);
@@ -14,40 +16,60 @@ const $ = (id) => document.getElementById(id);
 // Renderer, scene, camera
 // ---------------------------------------------------------------------------
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: new URLSearchParams(location.search).has('test') });
+// alpha: AR shows the camera passthrough behind the model.
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: new URLSearchParams(location.search).has('test') });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
 $('viewport').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xdfe6ec);
 
+// The rig carries the camera and controllers; walk mode moves it.
+const rig = new THREE.Group();
+rig.name = 'rig';
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.05, 500);
 camera.position.set(8, 8, 8);
+rig.add(camera);
+scene.add(rig);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.maxPolarAngle = Math.PI * 0.495; // stay above the ground
 
 // One hemisphere light and one directional light, no shadows (SPEC.md, performance).
-const hemi = new THREE.HemisphereLight(0xffffff, 0x8d8a85, 2.2);
+const hemi = new THREE.HemisphereLight(0xffffff, 0xb4b0a8, 2.2);
 const sun = new THREE.DirectionalLight(0xffffff, 1.6);
 sun.position.set(0.6, 1, 0.35);
 scene.add(hemi, sun);
 
-const modelHolder = new THREE.Group();
-scene.add(modelHolder);
+// anchor: dollhouse placement in XR (identity on the 2D page and at 1:1).
+// centerer: puts the model's bottom-centre at the anchor's origin.
+const anchor = new THREE.Group();
+anchor.name = 'anchor';
+const centerer = new THREE.Group();
+centerer.name = 'centerer';
+anchor.add(centerer);
+scene.add(anchor);
 
-let current = null; // result of openFiles()
+let current = null; // result of openFiles(), with root replaced by the merged model
+
+const xr = new XRExperience({ renderer, scene, camera, rig, anchor, centerer, onEnd: () => { controls.enabled = true; frame('iso'); } });
 
 window.addEventListener('resize', () => {
+	if (renderer.xr.isPresenting) return;
 	camera.aspect = window.innerWidth / window.innerHeight;
 	camera.updateProjectionMatrix();
 	renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-renderer.setAnimationLoop(() => {
-	controls.update();
+const timer = new THREE.Timer();
+renderer.setAnimationLoop((time) => {
+	timer.update(time);
+	const dt = Math.min(timer.getDelta(), 0.1);
+	if (renderer.xr.isPresenting) xr.update(dt);
+	else controls.update();
 	renderer.render(scene, camera);
 });
 
@@ -77,9 +99,9 @@ function showStats() {
 	const { triangles, drawCalls } = sceneStats(current.root);
 	const s = current.stats;
 	const fmt = (n) => n.toLocaleString('en-GB');
-	const lines = [`${fmt(triangles)} triangles · ${fmt(drawCalls)} draw calls`];
+	const lines = [`${fmt(triangles)} triangles · ${fmt(drawCalls)} draw calls${current.merged ? ` (merged from ${fmt(current.merged.sourceMeshes)} meshes)` : ''}`];
 	if (current.kind === 'sh3d') {
-		lines.push(`${s.walls} walls · ${s.rooms} rooms · ${s.pieces} pieces · ${s.openings} openings${s.levels ? ` · ${s.levels} levels` : ''}`);
+		lines.push(`${s.walls} walls · ${s.rooms} rooms · ${s.pieces} pieces · ${s.openings} openings${s.levels > 1 ? ` · ${s.levels} levels` : ''}`);
 		if (s.missingModels) lines.push(`${s.missingModels} model(s) could not be read (shown as boxes)`);
 	} else if (current.unit) {
 		lines.push(`Units: ${current.unit}`);
@@ -102,7 +124,7 @@ function disposeCurrent() {
 		for (const m of mats) { m.map?.dispose(); m.dispose(); }
 	});
 	current.store?.dispose();
-	modelHolder.clear();
+	centerer.clear();
 	current = null;
 }
 
@@ -114,11 +136,23 @@ async function load(files, label, source = { type: 'file' }) {
 	setStatus(`Opening ${label}…`);
 	try {
 		const result = await openFiles(files, { units: $('units').value, onProgress: (t) => setStatus(t) });
+		setStatus('Optimising for Quest…');
+		await new Promise((r) => setTimeout(r, 0)); // let the status paint
+		// ?nomerge (debugging only): show the scene exactly as loaded.
+		const merged = new URLSearchParams(location.search).has('nomerge')
+			? { group: result.root, layers: Object.fromEntries(['main', 'floors', 'ceilings', 'ground'].map((n) => [n, result.root.getObjectByName(n === 'main' ? 'walls' : n) || new THREE.Group()])), stats: null }
+			: optimiseModel(result.root);
 		disposeCurrent();
-		current = result;
-		modelHolder.add(result.root);
+		current = { ...result, root: merged.group, layers: merged.layers, merged: merged.stats };
+		centerer.add(current.root);
+		// Bottom-centre of the model (without the ground) at the origin.
+		const b = current.bounds;
+		centerer.position.set(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);
+		anchor.updateMatrixWorld(true);
+		xr.setModel({ group: current.root, layers: current.layers, bounds: current.bounds, observer: current.observer, skyColor: result.home?.skyColor });
 		if (result.home) scene.background = new THREE.Color(result.home.skyColor);
 		frame('iso');
+		updateXRButtons();
 		setStatus(`${label}`);
 		showStats();
 		document.title = `${label} · Sweet Home VR`;
@@ -134,7 +168,11 @@ async function load(files, label, source = { type: 'file' }) {
 /** Fits the camera to the model. view: 'iso' | 'ne' | 'nw' | 'se' | 'sw' | 'top'. */
 function frame(view = 'iso') {
 	if (!current) return;
-	const box = current.bounds && !current.bounds.isEmpty() ? current.bounds : new THREE.Box3().setFromObject(current.root);
+	// After an XR session the camera carries the headset's projection: reset it.
+	camera.fov = 50;
+	camera.aspect = window.innerWidth / window.innerHeight;
+	camera.quaternion.identity();
+	const box = (current.bounds && !current.bounds.isEmpty() ? current.bounds.clone() : new THREE.Box3().setFromObject(current.root)).translate(centerer.position);
 	const center = box.getCenter(new THREE.Vector3());
 	const size = box.getSize(new THREE.Vector3());
 	const radius = Math.max(size.x, size.z, size.y) * 0.5 + 0.5;
@@ -309,6 +347,38 @@ async function renderRecents() {
 }
 
 // ---------------------------------------------------------------------------
+// Enter VR / Enter AR (shown only when the browser supports them)
+// ---------------------------------------------------------------------------
+
+let xrSupport = { vr: false, ar: false };
+
+function updateXRButtons() {
+	const box = $('xr-buttons');
+	box.replaceChildren();
+	for (const [kind, label] of [['vr', 'Enter VR'], ['ar', 'Enter AR']]) {
+		if (!xrSupport[kind]) continue;
+		const b = document.createElement('button');
+		b.className = 'primary';
+		b.textContent = label;
+		b.disabled = !current;
+		b.title = current ? '' : 'Open a model first';
+		b.addEventListener('click', async () => {
+			try {
+				controls.enabled = false;
+				await xr.start(kind);
+			} catch (e) {
+				controls.enabled = true;
+				console.error(e);
+				setStatus(`Could not start ${label.replace('Enter ', '')}: ${e.message}`, true);
+			}
+		});
+		box.append(b);
+	}
+}
+
+XRExperience.supported().then((s) => { xrSupport = s; updateXRButtons(); });
+
+// ---------------------------------------------------------------------------
 // UI wiring
 // ---------------------------------------------------------------------------
 
@@ -356,19 +426,9 @@ window.__svr = {
 	ready,
 	frame: (view) => { frame(view); controls.update(); renderer.render(scene, camera); },
 	look: (pos, target) => { camera.position.set(...pos); controls.target.set(...target); controls.update(); renderer.render(scene, camera); },
-	stats: () => ({ ...(current?.stats || {}), ...sceneStats(current?.root || new THREE.Group()) }),
-	/** Furniture whose bounds reach more than 1 m outside the walls. */
-	outliers: () => {
-		const walls = current?.root.getObjectByName('walls');
-		const furniture = current?.root.getObjectByName('furniture');
-		if (!walls || !furniture) return [];
-		const wb = new THREE.Box3().setFromObject(walls).expandByScalar(1);
-		return furniture.children.filter((p) => !wb.containsBox(new THREE.Box3().setFromObject(p))).map((p) => {
-			const b = new THREE.Box3().setFromObject(p);
-			const f = (v) => v.toArray().map((n) => n.toFixed(1)).join(',');
-			return `${p.name} [${f(b.min)}]..[${f(b.max)}]`;
-		});
-	},
+	stats: () => ({ ...(current?.stats || {}), ...sceneStats(current?.root || new THREE.Group()), merged: current?.merged }),
 	scene,
+	xr,
+	renderer,
 	get current() { return current; },
 };

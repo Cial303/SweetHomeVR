@@ -18,7 +18,8 @@ WebXR viewer for Meta Quest 2 that opens Sweet Home 3D (`.sh3d`) files directly 
 ```
 index.html        2D UI and import map
 config.js         Dropbox app key, defaults
-js/main.js        app state machine (home / dollhouse / walk), renderer, XR session
+js/main.js        2D page, renderer, loading, Enter VR/AR buttons
+js/xr.js          XR session and modes (dollhouse / walk), scene rig
 js/sh3d.js        SH3D parser and scene builder (pure functions, Node-testable)
 js/formats.js     OBJ / zip / GLB / DAE / 3DS loading and unit detection
 js/optimise.js    merge-by-material and BVH
@@ -26,7 +27,8 @@ js/xr-input.js    controllers, rays, thumbsticks, teleport arc, snap turn
 js/panel.js       canvas-texture VR menu
 js/storage.js     IndexedDB recent files
 vendor/           vendored dependencies + licences
-tests/            Node tests (node:test) + Playwright screenshot script
+tests/            Node tests (node:test)
+scripts/          vendoring, fixtures, local server, screenshots, emulated XR test
 tests/fixtures/   sample .sh3d files (not committed; see README)
 ```
 
@@ -36,6 +38,9 @@ tests/fixtures/   sample .sh3d files (not committed; see README)
 - Use Node 24 (`nvm use`, see `.nvmrc`); the machine default is Node 12, which is too old. `package.json` holds dev-only tools (Playwright); the app itself never needs `npm install`.
 - Keep code plain and commented. `sh3d.js` must not touch the DOM so it runs in Node tests.
 - When unsure about a Sweet Home 3D detail, check the official sources (`HomeXMLExporter`, `ModelManager`, `Wall3D`, `Room3D`) rather than guessing.
-- Before finishing a parser/scene change: run `npm test`, run the Playwright screenshot script, and look at the screenshots against what Sweet Home 3D shows.
+- Before finishing a parser/scene change: run `npm test`, run `npm run shots`, and look at the screenshots against what Sweet Home 3D shows.
+- Before finishing an XR change: run `npm run xr-test` (Meta's IWER emulator drives a fake Quest 2 in headless Chromium) and look at the `test-output/xr-*.png` screenshots. It cannot judge comfort or frame rate: give the user an on-headset checklist.
+- `?nomerge` on the page URL skips the geometry merge, to tell merge bugs from loader bugs.
+- Don't commit files the user drops in the folder (e.g. `.rtf`, `.webloc`); stage paths explicitly.
 - This folder lives in Dropbox: keep `node_modules/` and Playwright output excluded from Dropbox sync and from git.
 - Never commit personal home files or the Dropbox app secret (the Chooser only needs the public app key).

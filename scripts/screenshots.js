@@ -38,9 +38,6 @@ for (const fx of fixtures) {
 	// Let textures decode.
 	await page.waitForTimeout(1500);
 	console.log(`  loaded in ${Date.now() - t0} ms`, JSON.stringify(await page.evaluate(() => window.__svr.stats())));
-	// Report furniture far outside the walls (usually a placement bug).
-	const outliers = await page.evaluate(() => window.__svr.outliers());
-	for (const o of outliers) console.log(`  ! outside walls: ${o}`);
 	await page.evaluate(() => document.getElementById('panel').classList.add('collapsed'));
 	for (const v of VIEWS) {
 		await page.evaluate((view) => window.__svr.frame(view), v);

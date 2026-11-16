@@ -4,7 +4,7 @@ A WebXR viewer for [Sweet Home 3D](https://www.sweethome3d.com/) homes on Meta Q
 
 It runs in the Meta Quest Browser: no app store, no developer mode, no sideloading. The same page works on a desktop browser as a 2D preview, so you can check a file before putting the headset on.
 
-> Status: **phase 1 of 5**: file loading and 2D preview. VR dollhouse, walk mode, Dropbox and performance work are next (see [SPEC.md](SPEC.md)).
+> Status: **phase 2 of 5**: 2D preview and the VR/AR dollhouse with jump-in at 1:1. Walking around (phase 3) and final performance work are next (see [SPEC.md](SPEC.md)).
 
 ## Using it
 
@@ -27,6 +27,20 @@ Supported files:
 **Quest Browser tip:** if picking a `.sh3d` file fails with "Quest Browser blocked this file type", rename it to `.zip`.
 
 **Copying files from a Mac to the Quest by cable:** Android File Transfer is no longer maintained; the free [OpenMTP](https://openmtp.ganeshrvel.com/) works with a Quest 2. Connect the headset by USB-C, accept "Allow access to data" inside the headset, and drag the `.sh3d` into any folder (e.g. a new `Sweet Home VR` folder). Then use **Open file** in the Quest Browser.
+
+## In the headset
+
+Press **Enter VR** (or **Enter AR** for passthrough) once a model is open.
+
+**Dollhouse**
+- The home stands on a pedestal in front of you, about 1.2 m across.
+- **Thumbstick** left/right rotates it; up/down zooms it (½× to 4×).
+- **Grip** and move your hand to pick it up and move it.
+- Point the **laser** at it: an orange figure shows where you'd stand. **Trigger** takes you there at real size.
+- The floating menu: **Walk in** (at Sweet Home 3D's virtual visitor position), **Ceilings on/off**, **Recentre**, **Exit**.
+
+**Inside, at 1:1**
+- **B** or **Y** goes back to the dollhouse. (Walking, teleporting and turning arrive in phase 3.)
 
 ## What gets shown from a Sweet Home 3D file
 
@@ -57,6 +71,7 @@ npm run fixtures       # download the public Sweet Home 3D example homes
 npm test               # parser tests (Node)
 npx playwright install chromium
 npm run shots          # screenshots of each fixture into test-output/
+npm run xr-test        # scripted VR session on an emulated Quest 2 (Meta's IWER)
 npm run serve          # http://localhost:8123/
 ```
 
@@ -67,7 +82,12 @@ Put your own test homes in `tests/fixtures/private/` (ignored by git). Open a mo
 ```
 index.html        2D UI and import map
 config.js         Dropbox app key, defaults
-js/main.js        app state, renderer, UI
+js/main.js        2D page, renderer, loading, UI
+js/xr.js          VR/AR session: dollhouse and 1:1 modes
+js/xr-input.js    controllers, lasers, buttons and thumbsticks
+js/panel.js       canvas-texture VR menu
+js/optimise.js    merge geometry by material, BVH for raycasts
+js/storage.js     recent models (IndexedDB)
 js/sh3d.js        SH3D parser and scene builder (no DOM; Node-testable)
 js/formats.js     zip / OBJ / GLB / DAE / 3DS loading, unit detection
 vendor/           three.js, three-mesh-bvh, fflate (with licences)
