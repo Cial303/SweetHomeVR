@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+	<title>Sweet Home VR</title>
+	<meta name="description" content="View Sweet Home 3D homes as a dollhouse and walk through them in VR on Meta Quest.">
+	<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 15 16 5l12 10v12H4z' fill='%23d9822b'/%3E%3Cpath d='M13 27v-8h6v8' fill='%23fff'/%3E%3C/svg%3E">
+	<style>
+		:root {
+			--bg: #eef1f4;
+			--panel: rgba(255, 255, 255, 0.92);
+			--text: #1d2329;
+			--muted: #5d6873;
+			--line: #d5dbe1;
+			--accent: #d9822b;
+			--accent-text: #ffffff;
+			--warn: #b3261e;
+			--radius: 12px;
+		}
+		@media (prefers-color-scheme: dark) {
+			:root {
+				--bg: #15191d;
+				--panel: rgba(28, 33, 38, 0.92);
+				--text: #e8ecef;
+				--muted: #9aa5af;
+				--line: #39424b;
+				--warn: #ff8a80;
+			}
+		}
+		* { box-sizing: border-box; }
+		html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+			font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+		#viewport { position: fixed; inset: 0; }
+		#viewport canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+		#panel { position: fixed; top: 16px; left: 16px; width: min(340px, calc(100vw - 32px)); max-height: calc(100vh - 32px);
+			overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+			padding: 16px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgba(0,0,0,.12); }
+		#panel.collapsed > :not(header) { display: none; }
+		header { display: flex; align-items: center; gap: 8px; }
+		h1 { font-size: 20px; margin: 0; flex: 1; letter-spacing: -0.01em; }
+		h1 span { color: var(--accent); }
+		h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 16px 0 6px; }
+		button, .button { font: inherit; border: 1px solid var(--line); background: transparent; color: var(--text);
+			border-radius: 8px; padding: 9px 12px; cursor: pointer; text-align: center; }
+		button:hover, .button:hover { border-color: var(--accent); }
+		button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+		button:disabled { opacity: .5; cursor: default; }
+		#collapse { padding: 4px 10px; }
+		.row { display: flex; gap: 8px; margin-top: 8px; }
+		.row > * { flex: 1; min-width: 0; }
+		input[type=url], select { font: inherit; color: var(--text); background: transparent; border: 1px solid var(--line);
+			border-radius: 8px; padding: 8px 10px; width: 100%; }
+		#file-input { display: none; }
+		#status { margin-top: 12px; min-height: 1.4em; color: var(--muted); }
+		#status.error { color: var(--warn); }
+		#stats { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+		#stats .warn { color: var(--warn); }
+		#xr-buttons:empty { display: none; }
+		#recent { list-style: none; padding: 0; margin: 0; }
+		.hint { font-size: 13px; color: var(--muted); margin: 6px 0 0; }
+	</style>
+	<script type="importmap">
+	{
+		"imports": {
+			"three": "./vendor/three/three.module.js",
+			"three/addons/": "./vendor/three/addons/",
+			"three-mesh-bvh": "./vendor/three-mesh-bvh/index.module.js",
+			"fflate": "./vendor/fflate/fflate.module.js"
+		}
+	}
+	</script>
+</head>
+<body>
+	<div id="viewport"></div>
+
+	<div id="panel">
+		<header>
+			<h1>Sweet Home <span>VR</span></h1>
+			<button id="collapse" title="Hide panel" aria-label="Hide panel">–</button>
+		</header>
+
+		<div class="row" id="xr-buttons"></div>
+
+		<h2>Open a model</h2>
+		<!-- No restrictive accept attribute: Quest Browser greys out uncommon extensions. -->
+		<input type="file" id="file-input" multiple>
+		<div class="row">
+			<button id="open-file" class="primary">Open file</button>
+		</div>
+		<div class="row">
+			<input type="url" id="link-input" placeholder="Paste a Dropbox or web link" autocomplete="off">
+		</div>
+		<div class="row">
+			<button id="open-link">Open from link</button>
+		</div>
+		<p class="hint">.sh3d (Sweet Home 3D 5.3+), .zip, .obj (+ .mtl and textures), .glb</p>
+
+		<div class="row">
+			<label for="units" style="flex:0 0 auto; align-self:center; color:var(--muted)">OBJ units</label>
+			<select id="units">
+				<option value="auto">Auto</option>
+				<option value="cm">cm</option>
+				<option value="m">m</option>
+				<option value="mm">mm</option>
+				<option value="in">in</option>
+			</select>
+		</div>
+
+		<div id="status"></div>
+		<div id="stats"></div>
+	</div>
+
+	<script type="module" src="./js/main.js"></script>
+</body>
+</html>

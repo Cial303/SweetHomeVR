@@ -1,0 +1,20 @@
+{
+  "name": "sweet-home-vr",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WebXR viewer for Sweet Home 3D files on Meta Quest. Dev tooling only: the app itself has no build step.",
+  "type": "module",
+  "scripts": {
+    "vendor": "node scripts/vendor.js",
+    "fixtures": "node scripts/fetch-fixtures.js",
+    "test": "node --import ./tests/register.js --test tests/*.test.js",
+    "serve": "node scripts/serve.js",
+    "shots": "node scripts/screenshots.js"
+  },
+  "devDependencies": {
+    "fflate": "0.8.3",
+    "playwright": "1.65.1",
+    "three": "0.187.0",
+    "three-mesh-bvh": "0.9.18"
+  }
+}

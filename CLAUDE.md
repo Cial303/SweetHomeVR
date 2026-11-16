@@ -1,0 +1,41 @@
+# Sweet Home VR
+
+WebXR viewer for Meta Quest 2 that opens Sweet Home 3D (`.sh3d`) files directly (plus OBJ/zip and GLB): view the home as a tabletop dollhouse, then walk through it at 1:1 scale. Replaces SketchUp Viewer for Quest for that one job.
+
+**SPEC.md is the source of truth** for SH3D parsing rules, furniture placement, walls/openings/rooms, controls and performance targets. Read the relevant section before touching that area. Don't propose alternatives to decisions in SPEC.md unless there is a concrete blocker, and explain the blocker.
+
+## Hard constraints
+
+- three.js + WebXR in the Meta Quest Browser. No Unity/native app, no frameworks beyond three.js.
+- Plain ES modules + import map, **no build step**. All runtime dependencies vendored in `vendor/` (three.js + used addons, fflate, three-mesh-bvh) with their licences. Nothing loads from a CDN at runtime.
+- Hosted on GitHub Pages (HTTPS is required for WebXR). The same URL works on desktop Chrome/Safari as a 2D orbit preview.
+- Quest Browser file picker: read picked files with `await file.arrayBuffer()` immediately; never create a blob URL from a picked `File`; no restrictive `accept` attribute; accept `.zip` wherever `.sh3d` is accepted.
+- Quest 2 is a phone GPU: merged geometry by material (< ~150 draw calls), BVH for every raycast, Lambert materials, no shadows.
+- Out of scope: editing, collaboration, accounts, measurements, scenes.
+
+## Layout
+
+```
+index.html        2D UI and import map
+config.js         Dropbox app key, defaults
+js/main.js        app state machine (home / dollhouse / walk), renderer, XR session
+js/sh3d.js        SH3D parser and scene builder (pure functions, Node-testable)
+js/formats.js     OBJ / zip / GLB / DAE / 3DS loading and unit detection
+js/optimise.js    merge-by-material and BVH
+js/xr-input.js    controllers, rays, thumbsticks, teleport arc, snap turn
+js/panel.js       canvas-texture VR menu
+js/storage.js     IndexedDB recent files
+vendor/           vendored dependencies + licences
+tests/            Node tests (node:test) + Playwright screenshot script
+tests/fixtures/   sample .sh3d files (not committed; see README)
+```
+
+## Working rules
+
+- Work in the phases listed in SPEC.md ("Working style"). Commit at the end of each phase, then stop for on-headset testing with a checklist.
+- Use Node 24 (`nvm use`, see `.nvmrc`); the machine default is Node 12, which is too old. `package.json` holds dev-only tools (Playwright); the app itself never needs `npm install`.
+- Keep code plain and commented. `sh3d.js` must not touch the DOM so it runs in Node tests.
+- When unsure about a Sweet Home 3D detail, check the official sources (`HomeXMLExporter`, `ModelManager`, `Wall3D`, `Room3D`) rather than guessing.
+- Before finishing a parser/scene change: run `npm test`, run the Playwright screenshot script, and look at the screenshots against what Sweet Home 3D shows.
+- This folder lives in Dropbox: keep `node_modules/` and Playwright output excluded from Dropbox sync and from git.
+- Never commit personal home files or the Dropbox app secret (the Chooser only needs the public app key).

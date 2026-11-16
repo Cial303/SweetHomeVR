@@ -1,0 +1,166 @@
+# Sweet Home VR: prompt for Claude Code
+
+Paste everything below the line into Claude Code, running in an empty folder on the Mac (e.g. `~/Projects/SweetHomeVR`). Work in Plan mode first and approve the plan before any code is written.
+
+---
+
+## Goal
+
+Build **Sweet Home VR**, a simple VR viewer for Meta Quest 2 that opens **Sweet Home 3D (.sh3d)** files directly, with no conversion step. It should also open OBJ (plain, or zipped with MTL and textures) and GLB. It replaces the discontinued SketchUp Viewer for Quest for one job only: looking at a home model as a dollhouse, then walking through it at real 1:1 scale.
+
+Out of scope: editing, collaboration, accounts, measurements and scenes (possible later phases).
+
+## Platform decision (already made; don't revisit)
+
+- **WebXR web app** running in the **Meta Quest Browser**, built with **three.js**. Don't build a native Unity or Android app: no developer mode, no sideloading, no store.
+- Plain ES modules and an import map, with **no build step**. Vendor every dependency into `/vendor` (three.js core plus the addons used, `fflate` for unzipping, `three-mesh-bvh` for fast raycasting) so nothing loads from a CDN at runtime.
+- WebXR needs a **secure context (HTTPS)**. Host on **GitHub Pages**. Create the repo and enable Pages with `gh`, after asking me for the repo name. A plain `http://192.168.x.x` server on the Mac will **not** run WebXR on the Quest.
+- The same URL must work on the Mac's desktop Chrome or Safari as a 2D preview (orbit-controlled dollhouse), so I can check that a file parses before putting the headset on.
+
+## Getting files onto the Quest (decided)
+
+1. **Primary: Dropbox.** I save the .sh3d into Dropbox on the Mac.
+   - **"Open from Dropbox" button** using the official **Dropbox Chooser** with `linkType: "direct"`. Direct links are CORS-enabled, so the app can `fetch()` them. The app key goes in `config.js`; walk me through registering a Dropbox app and adding the GitHub Pages domain.
+   - **"Open from link"** field for pasted Dropbox shared links. Rewrite `www.dropbox.com` to `dl.dropboxusercontent.com` and force `dl=1`, keeping `rlkey`. This workaround is unofficial, so handle failure gracefully.
+2. **Fallback: device file picker** (`<input type="file">`) for files already in the Quest's Downloads folder (e.g. downloaded from dropbox.com in the Quest Browser).
+   - **Known Quest Browser bug:** files with uncommon extensions picked through `<input type=file>` can fail with `ERR_ACCESS_DENIED` when read through a blob URL. Read the file with `await file.arrayBuffer()` straight away and never create a blob URL from the picked `File`. If reading still fails, show: "Quest Browser blocked this file type. Rename it to .zip and try again". Accept `.zip` everywhere `.sh3d` is accepted, since a .sh3d is a zip.
+   - Don't set a restrictive `accept` attribute.
+3. **Recent models:** cache the last 5 loaded files (bytes, name, date) in IndexedDB, so reopening a model is one tap.
+4. No Mac companion app. AirDrop can't target a Quest, and Android File Transfer is no longer maintained.
+
+## SH3D format: implement from this spec
+
+A `.sh3d` file is a ZIP archive. Since Sweet Home 3D 5.3 it contains a **`Home.xml`** entry, which is the only part to parse. Ignore the Java-serialised `Home` entry. If `Home.xml` is missing, say: "Re-save this file in Sweet Home 3D 5.3 or later."
+
+All lengths are in **centimetres** and all angles in **radians**. Plan coordinates are x right and y down. Build 3D in cm as (x, elevation, planY), then scale the root by 0.01 to get metres. This is the same axis mapping Sweet Home 3D uses internally (Java3D, y up).
+
+**Content references.** Attributes `model`, `icon` and `image` name ZIP entries, either a single entry like `"4"` or a folder entry like `"4/model.obj"` with its `.mtl` and textures beside it. Detect a model's format by magic bytes, not by name:
+- `PK` = nested zip (unzip it and find the .obj, .dae, .3ds or .glb inside)
+- `glTF` = GLB
+- `<?xml` containing COLLADA = DAE
+- `0x4D4D` = 3DS
+- otherwise OBJ text
+
+Resolve MTL and texture paths relative to the model's folder through a `LoadingManager.setURLModifier` that serves in-memory blobs. If a model is missing or broken, draw a unit box in its place.
+
+**Elements to read:** `home` (has `wallHeight`), `environment` (`groundColor`, `skyColor`), `observerCamera`, `level`, `pieceOfFurniture`, `doorOrWindow`, `furnitureGroup` (recurse; children hold absolute coordinates), `light` (render as furniture and ignore the light sources), `wall`, `room` (with `point` children), `texture`, and `material`. Ignore labels, dimension lines, polylines and the compass.
+
+**Visibility:**
+- Skip items whose `visible="false"`.
+- Skip items on a level whose `viewable="false"`.
+- Colours are ARGB hex strings, e.g. `FF808080`.
+
+**Furniture placement.** Copy this exactly; it is Sweet Home 3D's own `ModelManager` logic.
+
+1. Normalise the model:
+   1. Translate the model's bounding-box centre to the origin.
+   2. If `modelRotation` (9 floats, row-major 3×3) isn't identity, apply it. Then, when `modelCenteredAtOrigin` is true (the default), re-centre on the rotated bounding box.
+   3. Scale non-uniformly so the bounding box becomes 1×1×1.
+2. Scale to (`width` × (−1 if `modelMirrored`), `height`, `depth`).
+3. If `pitch` or `roll` is non-zero, pre-multiply by `rotZ(−roll) · rotX(−pitch)` and re-centre. The effective height is then the rotated bounding-box height.
+4. Rotate by `rotY(−angle)`.
+5. Translate to (`x`, `elevation` + effectiveHeight/2 + levelElevation, `y`). The `elevation` attribute is relative to the piece's level.
+
+**Furniture colours and materials:**
+- A piece `color` overrides the diffuse colour of all its materials.
+- `<material name=… color=…>` children override only the material with that name.
+- If `modelFlags & 1`, use `DoubleSide`; otherwise `FrontSide`.
+
+**Walls:**
+- Bottom = `level.elevation − level.floorThickness`, except on the lowest level, where the bottom is `level.elevation`.
+- Top = `level.elevation + height`. If `height` is absent, use `home.wallHeight`. Walls can slope through `heightAtEnd`.
+- Thickness is centred on the start→end line. With `a = atan2(yEnd−yStart, xEnd−xStart)`, the **left** side is offset by `(sin a, −cos a)·t/2`.
+- Apply `leftSideColor`/`leftSideTexture` and `rightSideColor`/`rightSideTexture` per face, and `topColor` to the top.
+- Texture `width`/`height` are the tile size in cm, so UVs in cm with repeat = 1/size.
+- Joins: where `wallAtStart`/`wallAtEnd` is set, extend the wall by thickness/2 − 1 mm. Proper mitring can come later.
+- Round walls (`arcExtent` ≠ 0): approximate with about 12 straight segments. Circle centre: `d = −tan(θ)·chord/2`, with `θ = (π − arcExtent)/2`, or `−(π + arcExtent)/2` if |arcExtent| > π. The centre is the chord midpoint + d·(cos φ, sin φ), with `φ = atan2(xStart − xEnd, yEnd − yStart)`.
+
+**Door and window openings.** Cut a rectangular hole wherever a `doorOrWindow` is roughly parallel to a wall and its centre lies within thickness/2 + depth/2 of the wall axis.
+- The opening covers a fraction of the piece: horizontally from `wallLeft·width` to `(wallLeft + wallWidth)·width` across the piece's width; vertically from the top down, starting `wallTop·height` below the piece top and spanning `wallHeight·height`.
+- Defaults: wallLeft 0, wallWidth 1, wallTop 0, wallHeight 1.
+- Project the opening onto the wall axis to get [u0, u1].
+- Build each wall as rectangular prism cells: sweep along u and subtract the opening intervals. This gives reveals for free and avoids hole-touching-edge triangulation failures.
+- Ignore `cutOutShape` (arched openings) for now.
+
+**Rooms:**
+- Floor polygon at the level elevation (or 0 without levels), one-sided facing up, using `floorColor`/`floorTexture`.
+- Ceiling at `level.elevation + level.height` (or `home.wallHeight`), one-sided facing **down**, so the dollhouse can be seen into from above.
+- Respect `floorVisible` and `ceilingVisible`.
+
+**Ground:** a rectangle 3 m larger than the model on every side, at −0.5 cm, in `groundColor`.
+
+**Start point:** `observerCamera` x and y give the default walk-in position. The facing yaw in three.js is `π − yaw`.
+
+## Other formats
+
+- **OBJ:** a single `.obj`, multiple picked files, or a `.zip` holding obj, mtl and textures. Units default to Auto (largest dimension > 100 → cm, otherwise m), with a cm / m / mm / in override. Sweet Home 3D's own OBJ export is in cm.
+- **GLB/glTF:** metres.
+
+## Performance (Quest 2 is a phone GPU)
+
+- After loading, bake world transforms and **merge geometry by material** (`BufferGeometryUtils.mergeGeometries`), deduplicating materials by colour, map and opacity. Aim for under 150 draw calls.
+- Build a `three-mesh-bvh` bounds tree on the merged meshes; all raycasts (pointer, teleport, floor-following) must use it.
+- Use `MeshLambertMaterial`, or Phong only where a model specifies shininess. One hemisphere light and one directional light, no shadows. Use foveation (`renderer.xr.setFoveation(1)`) and a framebuffer scale of 1.
+- Show the triangle and draw-call count on the 2D page. If the model exceeds about 1.5 M triangles, warn but still load.
+
+## Experience and controls
+
+**2D page (home screen)**
+- Title: "Sweet Home VR".
+- Buttons: Open from Dropbox, Open from link, Open file, plus the Recent list.
+- Live orbit preview of the dollhouse.
+- **Enter VR** and **Enter AR** buttons (AR = `immersive-ar` passthrough; greyscale on Quest 2). Show each only if `navigator.xr.isSessionSupported` says so.
+- Use `local-floor` reference space.
+
+**XR dollhouse mode** (on entering XR, like SketchUp Viewer's tabletop view)
+- VR: a calm, minimal showroom (light floor with a faint grid, soft gradient sky) and a round white pedestal about 0.85 m high, 1 m in front of the user. AR: no room and no pedestal; the model floats at the same spot over passthrough.
+- The model is scaled to fit about 1.2 m across and sits on the pedestal.
+- Thumbstick left/right rotates the model; up/down zooms it (×0.5 to ×4).
+- Grip plus moving the controller grabs and moves the model, keeping it upright (yaw only).
+- Each controller shows a laser ray. Pointing at the model shows a small person-height marker where the floor is; **trigger** enters 1:1 standing at that spot. Find the floor by casting downwards in model space and taking the first upward-facing hit.
+- Floating menu panel (canvas texture, laser-clickable): **Walk in** (at the observer camera position), **Ceilings on/off**, **Recentre**, **Exit**.
+
+**XR 1:1 walk mode**
+- The model is at real scale. Move a rig `Group` that contains the camera and controllers.
+- Left stick: smooth locomotion relative to head direction, about 1.5 m/s.
+- Right stick left/right: snap turn 30°.
+- Right stick forward, or holding either trigger: show a **parabolic teleport arc** with a landing ring. Valid only on surfaces with normal.y > 0.7 (blue); otherwise red. Release to teleport, with a short fade.
+- Floor following: each frame, cast down from 0.6 m above the feet. If a floor is within ±0.6 m, adopt its height (this handles stairs and levels). Walls don't block movement.
+- **B or Y:** back to dollhouse.
+- **A or X:** toggle a menu in front of the head with Dollhouse, Ceilings on/off, Snap angle 30°/45°, and Exit.
+
+## Project layout
+
+```
+index.html        2D UI and import map
+config.js         Dropbox app key, defaults
+js/main.js        app state machine (home / dollhouse / walk), renderer, XR session
+js/sh3d.js        SH3D parser and scene builder (pure functions, unit-testable)
+js/formats.js     OBJ / zip / GLB / DAE / 3DS loading and unit detection
+js/optimise.js    merge-by-material and BVH
+js/xr-input.js    controllers, rays, thumbsticks, teleport arc, snap turn
+js/panel.js       canvas-texture VR menu
+js/storage.js     IndexedDB recent files
+vendor/…          three.js, addons, fflate, three-mesh-bvh, with licences
+tests/            Node tests for sh3d.js against fixture files
+README.md         how to host, use and update
+```
+
+## Testing (do this; don't skip)
+
+1. Download real fixtures into `tests/fixtures/`: e.g. `userGuideExample.sh3d` and `SweetHome3DExample.sh3d` from `https://www.sweethome3d.com/examples/`, plus my own home file. I'll tell you its path.
+2. Node tests for the parser: counts of walls, rooms, pieces and openings; no NaN in any matrix; furniture lies inside the wall bounding box.
+3. Use Playwright with headless Chromium to load each fixture in the 2D preview and save screenshots of the dollhouse from four angles. Review the screenshots yourself against what Sweet Home 3D shows and fix what looks wrong: furniture orientation, mirrored items, door and window holes, floor and ceiling heights.
+4. Add a desktop WebXR emulation path (Immersive Web Emulator or a mock `navigator.xr`) only if it is cheap; otherwise give me a short on-headset test checklist.
+5. Deploy to GitHub Pages and give me the URL to bookmark in the Quest Browser.
+
+## Working style
+
+- Plan first, then build in phases, committing after each:
+  1. Parser and 2D preview
+  2. XR dollhouse
+  3. Walk mode
+  4. Dropbox and recents
+  5. Performance pass
+- Keep the code plain and commented. No frameworks beyond three.js.
+- When unsure about a Sweet Home 3D detail, check the official source (`HomeXMLExporter`, `ModelManager`, `Wall3D`, `Room3D` in the Sweet Home 3D sources) rather than guessing.
