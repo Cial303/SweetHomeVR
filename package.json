@@ -2,6 +2,9 @@
   "name": "sweet-home-vr",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "homepage": "https://cial303.github.io/SweetHomeVR/",
+  "repository": "github:Cial303/SweetHomeVR",
   "description": "WebXR viewer for Sweet Home 3D files on Meta Quest. Dev tooling only: the app itself has no build step.",
   "type": "module",
   "scripts": {

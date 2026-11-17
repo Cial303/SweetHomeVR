@@ -2,9 +2,17 @@
 
 A WebXR viewer for [Sweet Home 3D](https://www.sweethome3d.com/) homes on Meta Quest. Open a `.sh3d` file directly (no export step), look at it as a dollhouse, then walk through it at real scale. It also opens OBJ (plain, or zipped with MTL and textures) and GLB.
 
+**Try it: [cial303.github.io/SweetHomeVR](https://cial303.github.io/SweetHomeVR/)** (press *Try the example home* if you have no file to hand).
+
 It runs in the Meta Quest Browser: no app store, no developer mode, no sideloading. The same page works on a desktop browser as a 2D preview, so you can check a file before putting the headset on.
 
-> Status: all planned phases are done (see [SPEC.md](SPEC.md)): 2D preview, the VR/AR dollhouse, walking at 1:1, time of day and shadows, and a safety audit. It works offline after the first visit.
+| On the page | Dollhouse, in the headset | Walking inside |
+| --- | --- | --- |
+| ![The page with the example home](docs/page.jpg) | ![The dollhouse on its plinth with the menu open](docs/dollhouse.jpg) | ![Inside the example home's living room](docs/walk.jpg) |
+
+(Pictures: the example home that ships with the project. The headset views are from an emulated Quest 2.)
+
+> Status: all planned work is done (see [SPEC.md](SPEC.md)): 2D preview, the VR/AR dollhouse, walking at 1:1, time of day, shadows and depth shading, a safety audit, and offline use. Tested on a real Quest 2 only.
 
 ## Using it
 
@@ -93,23 +101,51 @@ Without a key the button is simply hidden. The Chooser script is the only file l
 - **Offline.** After the first visit the app's own files are kept by a service worker (`sw.js`), so the page opens without internet and your Recent models still load. Online, it always asks the server for the current files.
 - **What it cannot prevent.** A deliberately broken or enormous model can still make the browser tab slow or crash, as with any 3D viewer. It cannot reach your files, your account or other sites.
 
+## Feedback
+
+Problems and ideas are welcome as [issues](https://github.com/Cial303/SweetHomeVR/issues). It helps to say:
+
+- the headset and its browser version (or the desktop browser);
+- what you did and what you expected;
+- the numbers the page shows at the bottom right for the model (triangles, draw calls, walls, pieces);
+- the file itself, if you are happy to share it. Homes are personal, so a small file that shows the same problem is just as good.
+
+Things nobody has been able to check yet: a real Quest 3, 3S, Pro or Quest 1, Safari, very large homes (over a million triangles), and files written by old or unusual Sweet Home 3D versions.
+
 ## Development
 
-Requires Node 24 (`nvm use`). The app itself has no dependencies to install; `npm install` only fetches the dev tools.
+The app is plain ES modules served as static files: there is no build step and nothing to install to run it. Clone it and the Node tests already work (Node 24; `nvm use` picks it up):
 
 ```bash
-npm install            # dev tools (Playwright) and the libraries to vendor
-npm run vendor         # copy three.js, three-mesh-bvh and fflate into vendor/
-npm run fixtures       # download the public Sweet Home 3D example homes
-npm run example        # rebuild examples/example-home.sh3d (only after editing scripts/make-example.js)
-npm test               # parser, lighting and safety tests (Node)
-npx playwright install chromium
-npm run shots          # screenshots of each fixture into test-output/
-npm run xr-test        # scripted VR session on an emulated Quest 2 (Meta's IWER); XR_DEVICE=metaQuest3 for others
-npm run serve          # http://localhost:8123/
+git clone https://github.com/Cial303/SweetHomeVR.git
+cd SweetHomeVR
+npm test               # parser, lighting, depth-shading and safety tests: no install, no downloads
+npm run serve          # the app at http://localhost:8123/ (2D preview; WebXR on a headset needs https)
 ```
 
-Put your own test homes in `tests/fixtures/private/` (ignored by git). Open a model directly with `http://localhost:8123/?model=tests/fixtures/userGuideExample.sh3d`.
+The browser-driven checks need the dev tools (Playwright and Meta's IWER headset emulator):
+
+```bash
+npm install            # dev tools only; the app never needs it
+npx playwright install chromium
+npm run shots          # screenshots of each test home into test-output/
+npm run xr-test        # a scripted VR session on an emulated Quest 2: 61 checks and screenshots
+XR_DEVICE=metaQuest3 npm run xr-test   # or oculusQuest1, metaQuestPro: their controller layouts
+```
+
+Optional extras:
+
+```bash
+npm run fixtures       # download two public Sweet Home 3D example homes as more test files
+npm run example        # rebuild examples/example-home.sh3d (after editing scripts/make-example.js)
+npm run vendor         # copy three.js, three-mesh-bvh and fflate into vendor/ (after changing versions)
+```
+
+Every test runs on the example home in `examples/`. Downloaded fixtures and your own homes in `tests/fixtures/private/` (ignored by git) are picked up as well when present. Open a model directly with `http://localhost:8123/?model=examples/example-home.sh3d`.
+
+To test on a headset, fork the repository and enable GitHub Pages on your fork (Settings, Pages, deploy from the `main` branch): WebXR needs https, and Pages gives you that with no setup.
+
+Where to start reading: [SPEC.md](SPEC.md) is the brief the project was built from and records every decision and why; [CLAUDE.md](CLAUDE.md) holds the hard constraints and working rules. The project was written with [Claude Code](https://claude.com/claude-code), directed and tested on the headset by its owner; both files are what the assistant works from.
 
 ### Layout
 
@@ -130,8 +166,9 @@ js/formats.js     zip / OBJ / GLB / DAE / 3DS loading, unit detection
 sw.js             service worker: offline use, and no mix of old and new files after an update
 examples/         the generated example home (original content, made by scripts/make-example.js)
 vendor/           three.js, three-mesh-bvh, fflate (with licences)
-scripts/          vendoring, fixtures, local server, screenshots
+scripts/          vendoring, fixtures, example home, local server, screenshots, emulated headset test
 tests/            Node tests
+docs/             pictures for this README
 ```
 
 ### Updating three.js

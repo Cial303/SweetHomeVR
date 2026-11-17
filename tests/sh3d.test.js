@@ -20,7 +20,10 @@ const EXPECTED = {
 };
 
 const fixtures = [
-	...fs.readdirSync(FIX).filter((f) => f.endsWith('.sh3d')).map((f) => path.join(FIX, f)),
+	// Always there: the example home in the repository. Optional: the public
+	// Sweet Home 3D examples (npm run fixtures) and your own files in private/.
+	path.resolve(import.meta.dirname, '../examples/example-home.sh3d'),
+	...(fs.existsSync(FIX) ? fs.readdirSync(FIX).filter((f) => f.endsWith('.sh3d')).map((f) => path.join(FIX, f)) : []),
 	...(fs.existsSync(path.join(FIX, 'private')) ? fs.readdirSync(path.join(FIX, 'private')).filter((f) => f.endsWith('.sh3d')).map((f) => path.join(FIX, 'private', f)) : []),
 ];
 

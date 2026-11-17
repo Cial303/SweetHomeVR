@@ -13,8 +13,12 @@ import { startServer } from './serve.js';
 
 const root = path.resolve(import.meta.dirname, '..');
 const privateDir = path.join(root, 'tests/fixtures/private');
-const fixture = process.argv[2] || (fs.existsSync(privateDir) && fs.readdirSync(privateDir).find((f) => f.endsWith('.sh3d'))
-	? `tests/fixtures/private/${fs.readdirSync(privateDir).find((f) => f.endsWith('.sh3d'))}` : 'tests/fixtures/userGuideExample.sh3d');
+// The model to test with: the one named on the command line, else your own
+// file in tests/fixtures/private/, else a downloaded Sweet Home 3D example
+// (npm run fixtures), else the example home that ships with the repository.
+const own = fs.existsSync(privateDir) ? fs.readdirSync(privateDir).find((f) => f.endsWith('.sh3d')) : null;
+const fixture = process.argv[2] || (own ? `tests/fixtures/private/${own}`
+	: fs.existsSync(path.join(root, 'tests/fixtures/userGuideExample.sh3d')) ? 'tests/fixtures/userGuideExample.sh3d' : 'examples/example-home.sh3d');
 const out = path.join(root, 'test-output');
 fs.mkdirSync(out, { recursive: true });
 
@@ -285,7 +289,13 @@ await restRight(); await frames(3);
 // through it to the floor below, and that standing there uses that floor.
 s = await page.evaluate(async () => {
 	const THREE = await import('three');
-	const x = window.__svr.xr, t = x.targets(), b = x.model.bounds;
+	const x = window.__svr.xr, b = x.model.bounds;
+	// The one-level rule, whatever the test model is (restored below).
+	const was = x.model.multiLevel;
+	x.model.multiLevel = false;
+	x._targets = null;
+	const t = x.targets();
+	const restore = (v) => { x.model.multiLevel = was; x._targets = null; return v; };
 	const ray = new THREE.Raycaster();
 	for (let i = 0; i < 400; i++) {
 		const p = new THREE.Vector3(b.min.x + (i % 20 + 0.5) / 20 * (b.max.x - b.min.x), 0, b.min.z + (Math.floor(i / 20) + 0.5) / 20 * (b.max.z - b.min.z));
@@ -298,9 +308,9 @@ s = await page.evaluate(async () => {
 		if (ray.intersectObjects(x.model.layers.walls.children, false).length) continue;
 		const seg = x.hitSegment(h.point.clone().setY(h.point.y + 0.5), h.point.clone().setY(-0.05), t); // from above the top down past the floor
 		const under = new THREE.Raycaster(h.point.clone().setY(h.point.y + 0.1), new THREE.Vector3(0, -1, 0)).intersectObjects([...t.walkable], false)[0];
-		return { top: +h.point.y.toFixed(2), topPoint: h.point.toArray(), arcLands: seg ? +seg.point.y.toFixed(2) : null, arcValid: seg?.valid, floorBelow: under ? +under.point.y.toFixed(2) : null };
+		return restore({ top: +h.point.y.toFixed(2), topPoint: h.point.toArray(), arcLands: seg ? +seg.point.y.toFixed(2) : null, arcValid: seg?.valid, floorBelow: under ? +under.point.y.toFixed(2) : null });
 	}
-	return null;
+	return restore(null);
 });
 check('one level: arc goes through furniture to the floor', s && s.arcValid === true && s.floorBelow !== null && s.floorBelow < s.top - 0.25 && Math.abs(s.arcLands - s.floorBelow) < 0.01, JSON.stringify(s));
 

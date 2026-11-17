@@ -1,7 +1,7 @@
 // Loads each fixture in the 2D preview with headless Chromium and saves
 // screenshots from several angles into test-output/.
 //   npm run shots              all fixtures
-//   npm run shots -- barnard   only fixtures whose name contains "barnard"
+//   npm run shots -- example   only fixtures whose name contains "example"
 
 import fs from 'node:fs';
 import path from 'node:path';

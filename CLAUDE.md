@@ -36,6 +36,7 @@ vendor/           vendored dependencies + licences
 tests/            Node tests (node:test)
 scripts/          vendoring, fixtures, example home, local server, screenshots, emulated XR test
 tests/fixtures/   sample .sh3d files (not committed; see README)
+docs/             README pictures (from the example home only, never a personal file)
 ```
 
 ## Working rules
@@ -50,3 +51,4 @@ tests/fixtures/   sample .sh3d files (not committed; see README)
 - Don't commit files the user drops in the folder (e.g. `.rtf`, `.webloc`); stage paths explicitly.
 - This folder lives in Dropbox: keep `node_modules/` and Playwright output excluded from Dropbox sync and from git.
 - Never commit personal home files or the Dropbox app secret (the Chooser only needs the public app key).
+- The repository is public and shared with other developers: everything must work from a fresh clone (`npm test` with no install and no downloaded fixtures; the browser tests fall back to `examples/example-home.sh3d`). Keep file names, comments and pictures free of personal details.
