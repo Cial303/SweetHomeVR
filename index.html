@@ -57,7 +57,8 @@
 		button:hover { border-color: var(--accent); }
 		button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
 		button:disabled { opacity: .5; cursor: default; }
-		button.link { border: 0; min-height: 0; padding: 0; color: var(--accent); text-decoration: underline; font-size: inherit; }
+		button.outline { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+		button.outline:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 		input[type=url], select { font: inherit; color: var(--text); background: transparent; border: 1px solid var(--line);
 			border-radius: 9px; padding: 0 10px; min-height: 40px; width: 100%; min-width: 0; }
 		h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 0; font-weight: 600; }
@@ -141,6 +142,43 @@
 			#panel:not(.collapsed) ~ #stats { display: none; } /* no room while the files card is open */
 			button.xr { min-height: 56px; }
 		}
+		/* ---- Welcome: two handwritten notes with sketched arrows, over the
+		   empty view until a model is open. main.js places each beside what it
+		   points at. System handwriting fonts only (nothing is downloaded). ---- */
+		#welcome { position: fixed; pointer-events: none; color: #27313a;
+			font-family: "Bradley Hand", "Segoe Print", "Chalkboard SE", "Marker Felt", "Comic Sans MS", cursive;
+			text-shadow: 0 0 3px rgba(255,255,255,.95), 0 0 12px rgba(255,255,255,.8); }
+		body.dark-sky #welcome { color: #f6f1e7; text-shadow: 0 0 3px rgba(0,0,0,.9), 0 0 12px rgba(0,0,0,.7); }
+		#welcome .step { position: absolute; display: flex; align-items: center; gap: 8px; padding: 0 6px; }
+		#welcome .step[data-dir="right"] { justify-content: flex-end; }
+		#welcome .step:nth-child(1) .text { transform: rotate(-2deg); }
+		#welcome .step:nth-child(2) .text { transform: rotate(1.5deg); }
+		/* The number, in a circle drawn by hand. */
+		#welcome .num { flex: 0 0 auto; position: relative; width: 42px; height: 42px; display: grid; place-items: center;
+			font-size: 27px; font-weight: 700; line-height: 1; color: var(--accent); text-shadow: 0 0 3px rgba(255,255,255,.95); }
+		#welcome .num svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+		#welcome .text { flex: 0 1 auto; max-width: 250px; min-width: 0; }
+		#welcome strong { display: block; font-size: 27px; line-height: 1.1; }
+		#welcome .text span { display: block; font-size: 19px; line-height: 1.2; }
+		#welcome svg { fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; overflow: visible;
+			filter: drop-shadow(0 0 2px rgba(255,255,255,.9)); }
+		body.dark-sky #welcome svg { filter: drop-shadow(0 0 2px rgba(0,0,0,.8)); }
+		#welcome .num svg { stroke: var(--accent); stroke-width: 2.4; }
+		/* The arrow is drawn pointing left; the second note's is mirrored. */
+		#welcome .arrow { flex: 0 1 86px; min-width: 46px; aspect-ratio: 90 / 44; }
+		#welcome .step[data-dir="right"] .arrow { transform: scaleX(-1); }
+		#welcome .note { position: absolute; margin: 0; padding: 0 12px; text-align: center; font-size: 19px; opacity: .85; transform: rotate(-1deg); }
+		/* The usual layout: each note under its card ("below"); with the cards
+		   stacked on a narrow window, both notes in the gap between them
+		   ("stack"). The arrow comes first and points up or down. "side" (notes
+		   between the cards) is only used when there is no room under a card. */
+		#welcome[data-layout="stack"] { display: flex; flex-direction: column; justify-content: center; gap: 14px; padding: 0 14px; }
+		#welcome[data-layout="stack"] .step, #welcome[data-layout="stack"] .note { position: static; }
+		#welcome:not([data-layout="side"]) .step { justify-content: flex-start; }
+		#welcome:not([data-layout="side"]) .step[data-dir] .arrow { flex: 0 0 44px; min-width: 0; order: -1; transform: rotate(90deg); }
+		#welcome[data-layout="stack"] .step[data-dir="right"] .arrow { transform: rotate(-90deg) scaleY(-1); }
+		#welcome[data-layout="below"] .text { max-width: none; }
+
 		/* Dropping files on the page */
 		body.dropping #viewport { outline: 3px dashed var(--accent); outline-offset: -10px; }
 	</style>
@@ -158,6 +196,21 @@
 <body>
 	<div id="viewport"></div>
 
+	<!-- Welcome: two handwritten notes with arrows to the two cards. Hidden once a model is open. -->
+	<div id="welcome" hidden aria-label="How to start">
+		<div class="step" data-dir="left">
+			<svg class="arrow" viewBox="0 0 90 44" aria-hidden="true"><path d="M86 12 C 68 33, 36 39, 8 22"/><path d="M14.1 32.4 L8 22 L20 22.8"/></svg>
+			<b class="num"><svg viewBox="0 0 42 42" aria-hidden="true"><path d="M22 4 C 33 3, 39 12, 38 22 C 37 32, 28 39, 18 38 C 8 37, 3 28, 4 19 C 5 10, 13 3, 25 5"/></svg>1</b>
+			<div class="text"><strong>Start here</strong><span>open a .sh3d, .zip, .obj or .glb file, or try the example</span></div>
+		</div>
+		<div class="step" data-dir="right">
+			<b class="num"><svg viewBox="0 0 42 42" aria-hidden="true"><path d="M20 5 C 31 2, 39 11, 38 21 C 37 32, 29 38, 19 38 C 9 38, 3 30, 4 20 C 5 10, 12 4, 24 4"/></svg>2</b>
+			<div class="text"><strong>Set the mood</strong><span>pick the time of day and the shadows</span></div>
+			<svg class="arrow" viewBox="0 0 90 44" aria-hidden="true"><path d="M86 30 C 64 8, 34 6, 8 20"/><path d="M14.7 10.1 L8 20 L20 20"/></svg>
+		</div>
+		<p class="note">Your home never leaves this device.</p>
+	</div>
+
 	<!-- Files: open a model, or reopen a recent one. -->
 	<aside id="panel" class="card">
 		<header>
@@ -168,12 +221,12 @@
 			<!-- No restrictive accept attribute: Quest Browser greys out uncommon extensions. -->
 			<input type="file" id="file-input" multiple>
 			<button id="open-dropbox" class="primary" hidden>Open from Dropbox</button>
-			<button id="open-file" class="primary">Open file</button>
+			<button id="open-file" class="primary" title="Sweet Home 3D 5.3 or later (.sh3d), a zip, an OBJ with its .mtl and textures, or a GLB">Open file</button>
 			<div class="link-row">
 				<input type="url" id="link-input" placeholder="Paste a Dropbox or web link" autocomplete="off" aria-label="Link to a model">
-				<button id="open-link">Open</button>
+				<button id="open-link">Load</button>
 			</div>
-			<p class="hint" title="Sweet Home 3D 5.3 or later (.sh3d), a zip, an OBJ with its .mtl and textures, or a GLB">.sh3d, .zip, .obj or .glb · <button id="open-example" class="link">Try the example home</button></p>
+			<button id="open-example" class="outline">Try the example home</button>
 			<div id="status" role="status"></div>
 			<section id="recent-section" hidden>
 				<h2>Recent</h2>

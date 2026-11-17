@@ -104,8 +104,27 @@ const clickMenu = async (id) => { await aimW('right', R, await menuPoint(id)); a
 const modelTop = () => page.evaluate(() => { const x = window.__svr.xr; return x.stage.localToWorld(x.doll.pos.clone().add(new (x.doll.pos.constructor)(0.05, 0.02, 0.25))).toArray(); });
 
 console.log(`Fixture: ${fixture}   Device: ${DEVICE}`);
+// The empty page: two welcome notes by the cards; they go once a model is open.
+await page.goto('http://localhost:8129/?test');
+await page.waitForFunction(() => !document.getElementById('welcome').hidden, null, { timeout: 5000 }).catch(() => {});
+const welcome = () => page.evaluate(() => {
+	const r = (el) => el.getBoundingClientRect(), w = document.getElementById('welcome');
+	if (w.hidden) return { shown: false };
+	const over = (a, b) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+	const cards = [r(document.getElementById('panel')), r(document.getElementById('view'))];
+	const notes = [...w.querySelectorAll('.step')];
+	const texts = [...w.querySelectorAll('.num, .text')].map(r);
+	return { shown: true, layout: w.dataset.layout, notes: notes.length, clear: !texts.some((t) => cards.some((c) => over(t, c))), inside: texts.every((t) => t.top >= 0 && t.bottom <= innerHeight),
+		under: Math.abs(r(notes[0]).left - cards[0].left) < 2 && r(notes[0]).top > cards[0].bottom && Math.abs(r(notes[1]).left - cards[1].left) < 2 && r(notes[1]).top > cards[1].bottom,
+		formats: /\.sh3d.*\.zip.*\.obj.*\.glb/.test(notes[0].textContent) && !/\.sh3d/.test(document.getElementById('panel').textContent) };
+});
+let wl = await welcome();
+check('welcome notes sit under the two cards on the empty page', wl.shown && wl.notes === 2 && wl.layout === 'below' && wl.under && wl.clear && wl.inside && wl.formats, JSON.stringify(wl));
+await shot('welcome');
 await page.goto(`http://localhost:8129/?test&model=${encodeURIComponent(fixture)}`);
 check('model loads', await page.evaluate(() => window.__svr.ready));
+await frames(5);
+check('welcome notes go once a model is open', (await welcome()).shown === false);
 const enterVR = page.locator('#xr-buttons button', { hasText: 'Enter VR' });
 check('one Enter VR button', await enterVR.count() === 1 && await page.locator('#xr-buttons button').count() === 1);
 

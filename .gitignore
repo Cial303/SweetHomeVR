@@ -4,3 +4,12 @@ tests/fixtures/*.sh3d
 tests/fixtures/*.zip
 tests/fixtures/private/
 .DS_Store
+
+# Loose files dropped in the project folder (recordings, notes): never committed
+/*.mp4
+/*.mov
+/*.jpg
+/*.jpeg
+/*.png
+/*.rtf
+/*.webloc

@@ -399,7 +399,7 @@ function setupDropbox() {
 }
 
 function openFromDropbox() {
-	if (!window.Dropbox) { setStatus('Dropbox is not available right now. Try Open from link instead.', true); return; }
+	if (!window.Dropbox) { setStatus('Dropbox is not available right now. Paste a link and press Load instead.', true); return; }
 	// Must run directly in the click handler, or the browser blocks the popup.
 	window.Dropbox.choose({
 		linkType: 'direct',
@@ -481,6 +481,7 @@ let xrSupport = { vr: false, ar: false };
 let xrChecked = false; // the browser has answered whether it supports VR
 
 function updateXRButtons() {
+	layoutWelcomeSoon(); // (called whenever loading starts or ends, or VR support becomes known)
 	const box = $('xr-buttons');
 	box.replaceChildren();
 	if (!xrSupport.vr && !xrSupport.ar) {
@@ -550,6 +551,77 @@ $('units').value = CONFIG.defaultObjUnits;
 $('link-input').value = getLastLink();
 renderRecents();
 
+// ---------------------------------------------------------------------------
+// Welcome: three steps with arrows over the empty view, until a model is open
+// ---------------------------------------------------------------------------
+
+/**
+ * Places the two welcome notes by what they point at: 1 the files card, 2
+ * the display card. Three layouts:
+ *   below  (preferred) each note sits under its card, with an arrow up to it
+ *   side   a card is too tall to leave room beneath it: the notes go between
+ *          the cards instead, level with the Open file button and the options
+ *   stack  cards stacked (narrow windows): both notes in the gap between them
+ */
+function layoutWelcome() {
+	const w = $('welcome');
+	const show = !current && loading === 0;
+	w.hidden = !show;
+	if (!show) return;
+	const p = $('panel').getBoundingClientRect(), v = $('view').getBoundingClientRect();
+	const [one, two] = w.querySelectorAll('.step'), note = w.querySelector('.note');
+	const H = window.innerHeight, strip = v.left - p.right;
+	const place = (el, left, top, width) => Object.assign(el.style, { left: `${left}px`, top: `${top}px`, width: `${width}px` });
+	note.hidden = false;
+
+	if (v.top > p.bottom) {
+		// Stacked: the gap between the files card (top) and the display card (bottom).
+		w.dataset.layout = 'stack';
+		const top = p.bottom + 8, height = v.top - 8 - top;
+		for (const el of [one, two, note]) Object.assign(el.style, { left: '', top: '', width: '' });
+		Object.assign(w.style, { left: '0px', top: `${top}px`, width: '100%', height: `${Math.max(0, height)}px` });
+		w.hidden = height < 60 || w.scrollHeight > height + 1; // no room: better nothing than cut-off notes
+		return;
+	}
+	Object.assign(w.style, { left: '0px', top: '0px', width: '100%', height: `${H}px` });
+
+	// Preferred: each note under its card.
+	w.dataset.layout = 'below';
+	place(one, p.left, p.bottom + 12, p.width);
+	place(two, v.left, v.bottom + 12, v.width);
+	let bottom = Math.max(p.bottom + 12 + one.offsetHeight, v.bottom + 12 + two.offsetHeight);
+	place(note, 0, bottom + 26, window.innerWidth);
+
+	if (bottom > H - 6 && strip >= 240) {
+		// No room under a card (a long Recent list, a short window): between the cards.
+		w.dataset.layout = 'side';
+		const width = Math.min(strip, 350);
+		one.style.width = two.style.width = `${width}px`; // (set first: their heights depend on it)
+		const centre = (el) => { const r = el.getBoundingClientRect(); return r.height ? (r.top + r.bottom) / 2 : 0; };
+		const top1 = Math.max(4, (centre($('open-file')) || centre($('collapse'))) - one.offsetHeight / 2);
+		// Note 2 points at the middle of the options; if the strip is too narrow
+		// for the notes to pass each other, it moves down below note 1.
+		const options = ($('time').getBoundingClientRect().top + document.querySelector('#view .switches').getBoundingClientRect().bottom) / 2;
+		let top2 = Math.max(4, options - two.offsetHeight / 2);
+		if (strip < 2 * width) top2 = Math.max(top2, top1 + one.offsetHeight + 10);
+		place(one, p.right, top1, width);
+		place(two, v.left - width, top2, width);
+		bottom = Math.max(top1 + one.offsetHeight, top2 + two.offsetHeight);
+		place(note, p.right, Math.max(bottom + 30, Math.min(H * 0.62, H - 70)), strip);
+	}
+	note.hidden = note.offsetTop + note.offsetHeight > H - 6; // (the last line goes first when space runs out)
+	w.hidden = bottom > H - 6; // a very short window: no room at all
+}
+let welcomeQueued = false;
+/** Lays the welcome out after the page has settled (several changes in one frame cost one layout). */
+function layoutWelcomeSoon() {
+	if (welcomeQueued) return;
+	welcomeQueued = true;
+	requestAnimationFrame(() => { welcomeQueued = false; layoutWelcome(); });
+}
+window.addEventListener('resize', layoutWelcomeSoon);
+if ('ResizeObserver' in window) { const ro = new ResizeObserver(layoutWelcomeSoon); ro.observe($('panel')); ro.observe($('view')); }
+
 function setCollapsed(c) {
 	$('panel').classList.toggle('collapsed', c);
 	$('collapse').textContent = c ? '+' : '–';
@@ -604,7 +676,7 @@ if (initial) {
 		ready = loadUrl(initial, { remember: false }).then(() => true, () => false);
 	} else if (link.ok) {
 		$('link-input').value = initial;
-		setStatus(`This page was opened with a link to a model on ${link.host}. Press “Open from link” if you trust it.`);
+		setStatus(`This page was opened with a link to a model on ${link.host}. Press “Load” if you trust it.`);
 	} else {
 		setStatus(link.error, true);
 	}
