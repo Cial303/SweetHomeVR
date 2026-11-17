@@ -138,7 +138,7 @@ Optional extras:
 ```bash
 npm run fixtures       # download two public Sweet Home 3D example homes as more test files
 npm run example        # rebuild examples/example-home.sh3d (after editing scripts/make-example.js)
-npm run vendor         # copy three.js, three-mesh-bvh and fflate into vendor/ (after changing versions)
+npm run vendor         # copy three.js, three-mesh-bvh, fflate and the font into vendor/ (after changing versions)
 ```
 
 Every test runs on the example home in `examples/`. Downloaded fixtures and your own homes in `tests/fixtures/private/` (ignored by git) are picked up as well when present. Open a model directly with `http://localhost:8123/?model=examples/example-home.sh3d`.
@@ -165,7 +165,7 @@ js/sh3d.js        SH3D parser and scene builder (no DOM; Node-testable)
 js/formats.js     zip / OBJ / GLB / DAE / 3DS loading, unit detection
 sw.js             service worker: offline use, and no mix of old and new files after an update
 examples/         the generated example home (original content, made by scripts/make-example.js)
-vendor/           three.js, three-mesh-bvh, fflate (with licences)
+vendor/           three.js, three-mesh-bvh, fflate and the Kalam font (with licences)
 scripts/          vendoring, fixtures, example home, local server, screenshots, emulated headset test
 tests/            Node tests
 docs/             pictures for this README
@@ -179,4 +179,5 @@ Change the versions in `package.json`, then `npm install && npm run vendor`, run
 
 - This project: MIT licence (see [LICENSE](LICENSE)).
 - [three.js](https://threejs.org/) (MIT), [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh) (MIT), [fflate](https://github.com/101arrowz/fflate) (MIT).
+- The handwriting on the welcome notes is [Kalam](https://fonts.google.com/specimen/Kalam) by Indian Type Foundry (SIL Open Font Licence 1.1; licence in `vendor/kalam/`).
 - Sweet Home 3D by Emmanuel Puybaret / Space Mushrooms. This project reads its file format; it contains no Sweet Home 3D code.

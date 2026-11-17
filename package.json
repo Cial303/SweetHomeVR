@@ -17,6 +17,7 @@
     "xr-test": "node scripts/xr-test.js"
   },
   "devDependencies": {
+    "@fontsource/kalam": "5.3.0",
     "fflate": "0.8.3",
     "iwer": "2.7.0",
     "playwright": "1.65.1",

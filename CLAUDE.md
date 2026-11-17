@@ -7,7 +7,7 @@ WebXR viewer for Meta Quest 2 that opens Sweet Home 3D (`.sh3d`) files directly 
 ## Hard constraints
 
 - three.js + WebXR in the Meta Quest Browser. No Unity/native app, no frameworks beyond three.js.
-- Plain ES modules + import map, **no build step**. All runtime dependencies vendored in `vendor/` (three.js + used addons, fflate, three-mesh-bvh) with their licences. Nothing loads from a CDN at runtime.
+- Plain ES modules + import map, **no build step**. All runtime dependencies vendored in `vendor/` (three.js + used addons, fflate, three-mesh-bvh, the Kalam font of the welcome notes) with their licences. Nothing loads from a CDN at runtime.
 - Hosted on GitHub Pages (HTTPS is required for WebXR). The same URL works on desktop Chrome/Safari as a 2D orbit preview.
 - Quest Browser file picker: read picked files with `await file.arrayBuffer()` immediately; never create a blob URL from a picked `File`; no restrictive `accept` attribute; accept `.zip` wherever `.sh3d` is accepted.
 - Quest 2 is a phone GPU: merged geometry by material (< ~150 draw calls), BVH for every raycast, Lambert materials. Shadows only as the optional on-demand map in lighting.js (never per-frame); no post-process or temporal anti-aliasing (flickers).

@@ -126,6 +126,14 @@ test('the page allows only its own scripts, and the import map hash is right', (
 	assert.match(csp, /default-src 'none'/);
 	assert.match(csp, /script-src 'self' 'sha256-[^']+'(;|$)/); // no unsafe-inline, no unsafe-eval, no outside hosts
 	assert.match(csp, /object-src 'none'/);
+	assert.match(csp, /font-src 'self'(;|$)/); // only the vendored font
+	const fontUrls = [...html.matchAll(/@font-face[^}]*url\("([^"]+)"\)/g)].map((m) => m[1]);
+	assert.ok(fontUrls.length > 0);
+	for (const u of fontUrls) {
+		assert.ok(u.startsWith('./vendor/'), u);
+		assert.ok(fs.existsSync(path.join(ROOT, u)), `${u} exists`);
+		assert.ok(fs.existsSync(path.join(ROOT, path.dirname(u), 'LICENSE')), `${u} ships with its licence`);
+	}
 	assert.match(csp, /base-uri 'none'/);
 	// Every script the page loads is its own file; nothing comes from a CDN.
 	const scripts = [...html.matchAll(/<script[^>]*\ssrc="([^"]+)"/g)].map((m) => m[1]);

@@ -1,5 +1,5 @@
-// Copies the runtime dependencies from node_modules into vendor/ so the app
-// never loads anything from a CDN. Run after changing versions in package.json:
+// Copies the runtime dependencies (libraries and the one font) from
+// node_modules into vendor/ so the app never loads anything from a CDN. Run after changing versions in package.json:
 //   npm install && npm run vendor
 // Only the three.js addons listed in ADDONS are copied, plus every file they
 // import through relative paths (followed recursively).
@@ -57,7 +57,12 @@ copy(path.join(nm, 'three-mesh-bvh/LICENSE'), path.join(vendor, 'three-mesh-bvh/
 copy(path.join(nm, 'fflate/esm/browser.js'), path.join(vendor, 'fflate/fflate.module.js'));
 copy(path.join(nm, 'fflate/LICENSE'), path.join(vendor, 'fflate/LICENSE'));
 
-const versions = Object.fromEntries(['three', 'three-mesh-bvh', 'fflate'].map(
+// Kalam, the handwriting font of the welcome notes (SIL Open Font Licence):
+// the Latin subset in two weights, so the notes look the same on every device.
+for (const weight of [400, 700]) copy(path.join(nm, `@fontsource/kalam/files/kalam-latin-${weight}-normal.woff2`), path.join(vendor, `kalam/kalam-latin-${weight}.woff2`));
+copy(path.join(nm, '@fontsource/kalam/LICENSE'), path.join(vendor, 'kalam/LICENSE'));
+
+const versions = Object.fromEntries(['three', 'three-mesh-bvh', 'fflate', '@fontsource/kalam'].map(
 	(p) => [p, JSON.parse(fs.readFileSync(path.join(nm, p, 'package.json'), 'utf8')).version]));
 fs.writeFileSync(path.join(vendor, 'VERSIONS.json'), JSON.stringify(versions, null, 2) + '\n');
 console.log('Vendored', versions, `(${seen.size} three.js addon files)`);

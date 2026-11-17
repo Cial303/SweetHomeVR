@@ -620,6 +620,7 @@ function layoutWelcomeSoon() {
 	requestAnimationFrame(() => { welcomeQueued = false; layoutWelcome(); });
 }
 window.addEventListener('resize', layoutWelcomeSoon);
+document.fonts?.ready.then(layoutWelcomeSoon); // the notes change size when their font arrives
 if ('ResizeObserver' in window) { const ro = new ResizeObserver(layoutWelcomeSoon); ro.observe($('panel')); ro.observe($('view')); }
 
 function setCollapsed(c) {
