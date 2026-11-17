@@ -35,7 +35,13 @@ const DOWN = new THREE.Vector3(0, -1, 0);
 const PLINTH_HEIGHT = 0.6; // low table: you look down into the rooms
 const PLINTH_MARGIN = 0.2; // table left around the model (it is ~1.2 m across)
 const PLINTH_FRONT_GAP = 0.3; // from where you stand to the plinth's front edge
-const DOLLHOUSE_EYE_LIFT = 0.25; // VR dollhouse: see it as if you were ~2 m tall
+// VR dollhouse: you look down at it as a 2 m tall person would, whatever your
+// own height, whether you sit or stand, and however the headset's floor level
+// is set. The head's real height is measured on entry and on Recentre, and
+// the view is raised by the difference (never lowered).
+const DOLLHOUSE_PERSON = 2.0; // metres
+const DOLLHOUSE_LIFT_START = 0.25; // used for the first frames, before the head height is known
+const DOLLHOUSE_LIFT_MAX = 1.4; // (lying on the floor is not a case to support)
 const DOLLHOUSE_SIZE = 1.2; // metres across
 const ZOOM_MIN = 0.5, ZOOM_MAX = 4;
 const ROTATE_SPEED = 1.6; // rad/s at full stick
@@ -70,6 +76,7 @@ export class XRExperience {
 		this.plinthDistance = 1; // centre of the plinth in front of the user; set by buildPlinth()
 		this.doll = { pos: new THREE.Vector3(0, PLINTH_HEIGHT, -this.plinthDistance), yaw: 0, zoom: 1 };
 		this.lift = 0; // the rig's height above the floor the user stands on
+		this.dollLift = DOLLHOUSE_LIFT_START; // VR dollhouse lift, from the measured head height
 		this.grab = null; // dollhouse: grabbing the model
 		this.tele = null; // teleport being aimed: { c, result }
 		this.fade = null; // { t, action }
@@ -359,7 +366,8 @@ export class XRExperience {
 		this.stage.rotation.set(0, 0, 0);
 		this.updateLabels();
 		this.resetDollhouse();
-		this.enterDollhouse();
+		this.dollLift = DOLLHOUSE_LIFT_START;
+		this.enterDollhouse(false); // no head pose yet: measured below, with the first one
 		// The floor origin is not necessarily where you stand (it can be
 		// anywhere in your play area), so place the plinth in front of the
 		// head as soon as the first head pose arrives.
@@ -419,7 +427,7 @@ export class XRExperience {
 			this.pedestal.visible = vr;
 			this.walkSky.visible = false;
 			this.model.layers.ground.visible = false;
-			this.setLift(vr ? DOLLHOUSE_EYE_LIFT : 0);
+			this.setLift(vr ? this.dollLift : 0);
 		} else if (this.mode === 'walk') {
 			this.showroom.visible = false;
 			this.walkSky.visible = vr;
@@ -446,6 +454,19 @@ export class XRExperience {
 		}
 		this._targets = null; // hidden storeys cannot be pointed at
 		this.lighting?.refresh(); // and cast no shadows
+	}
+
+	/**
+	 * VR dollhouse: works out the lift that puts the eyes where a 2 m tall
+	 * person's would be, from the head's real height above the floor.
+	 * headLocal: the head pose in tracking space (camera.matrix, or the
+	 * viewer pose).
+	 */
+	measureDollLift(headLocal) {
+		const y = new THREE.Vector3().setFromMatrixPosition(headLocal).y;
+		// (Ignore nonsense heights: no pose yet, or the 2D camera's position.)
+		if (y > 0.3 && y < 2.5) this.dollLift = THREE.MathUtils.clamp(DOLLHOUSE_PERSON - EYE_BELOW_TOP - y, 0, DOLLHOUSE_LIFT_MAX);
+		if (this.mode === 'dollhouse') this.setLift(this.vrView ? this.dollLift : 0);
 	}
 
 	/** Raises the rig by `lift` above the floor the user stands on. */
@@ -635,7 +656,7 @@ export class XRExperience {
 			case 'light': this.lighting?.nextTime(); this.updateLabels(); break;
 			case 'shadows': this.lighting?.setShadows(!this.lighting.shadows); this.updateLabels(); break;
 			case 'depth': this.depth?.setEnabled(!this.depth.enabled); this.updateLabels(); break;
-			case 'recentre': this.closeMenu(); this.recentre(); break;
+			case 'recentre': this.closeMenu(); this.measureDollLift(this.camera.matrix); this.recentre(); break;
 			case 'exit': this.closeMenu(); this.end(); break;
 		}
 	}
@@ -657,7 +678,8 @@ export class XRExperience {
 		this.doll.zoom = 1;
 	}
 
-	enterDollhouse() {
+	/** measure: take the head height now (false at session start, when there is no pose yet). */
+	enterDollhouse(measure = true) {
 		this.mode = 'dollhouse';
 		this.tele = null;
 		this.arc.hide();
@@ -665,6 +687,7 @@ export class XRExperience {
 		this.rig.position.set(0, 0, 0);
 		this.rig.rotation.set(0, 0, 0);
 		this.lift = 0;
+		if (measure) this.measureDollLift(this.camera.matrix);
 		this.stage.visible = true;
 		for (const c of this.input.controllers) this.input.setLaser(c, true);
 		this.applyView();
@@ -1038,6 +1061,7 @@ export class XRExperience {
 			const head = this.viewerMatrix();
 			if (head) {
 				this.pendingRecentre = false;
+				this.measureDollLift(head); // the tall view, from where the head really is
 				this.recentre(head.clone().premultiply(this.rig.matrix));
 				// Open the menu once per visit so it gets discovered.
 				if (!this.menuShownOnce) { this.menuShownOnce = true; this.openMenu(head); }

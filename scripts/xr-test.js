@@ -116,7 +116,7 @@ await page.waitForFunction(() => { const x = window.__svr.xr; return x.mode && !
 await frames(10);
 let s = await state();
 check('enters the VR dollhouse', s.presenting && s.mode === 'dollhouse' && s.showroom, JSON.stringify({ mode: s.mode, session: s.session }));
-check('eyes lifted in the dollhouse', Math.abs(s.rig[1] - 0.25) < 1e-6, `rig y ${s.rig[1]}`);
+check('dollhouse: eyes where a 2 m person\'s would be (1.89 m)', Math.abs(s.head[1] - 1.89) < 0.005 && Math.abs(s.rig[1] - 0.29) < 0.005, `eyes ${s.head[1].toFixed(3)} m, raised ${s.rig[1].toFixed(3)} m`);
 check('an orb on each hand', s.orbs === 2);
 check('scale figure stands by the dollhouse at the model\'s scale', s.figure && Math.abs(s.figureHeight - 1.75 * s.anchorScale) < 1e-3, `figure ${s.figureHeight.toFixed(3)} m, scale ${s.anchorScale.toFixed(3)}`);
 check('menu opens once on entry', s.menu === 'dollhouse');
@@ -209,7 +209,7 @@ if (s.session === 'ar') {
 	await shot('passthrough');
 	await clickMenu('view');
 	s = await state();
-	check('View switches back to VR', s.view === 'vr' && s.showroom && Math.abs(s.rig[1] - 0.25) < 1e-6);
+	check('View switches back to VR', s.view === 'vr' && s.showroom && Math.abs(s.rig[1] - 0.29) < 0.005);
 } else {
 	check('View switch (needs an AR session)', false, `session ${s.session}`);
 }
@@ -377,7 +377,7 @@ await shot('back-to-2d');
 // Re-enter from another spot, facing another way: the room and plinth come to you.
 await page.evaluate(() => {
 	const d = window.__device;
-	d.position.set(1.2, 1.6, 0.8);
+	d.position.set(1.2, 1.15, 0.8); // sitting down this time
 	const yaw = 0.9, a = -0.45;
 	const qy = [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)], qx = [Math.sin(a / 2), 0, 0, Math.cos(a / 2)];
 	const q = [qy[3] * qx[0] + qy[0] * qx[3] + qy[1] * qx[2] - qy[2] * qx[1], qy[3] * qx[1] - qy[0] * qx[2] + qy[1] * qx[3] + qy[2] * qx[0], qy[3] * qx[2] + qy[0] * qx[1] - qy[1] * qx[0] + qy[2] * qx[3], qy[3] * qx[3] - qy[0] * qx[0] - qy[1] * qx[1] - qy[2] * qx[2]];
@@ -389,6 +389,14 @@ s = await state();
 check('re-entering puts the plinth in front of you', Math.abs(s.stage[0] - 1.2) < 0.02 && Math.abs(s.stage[2] - 0.8) < 0.02 && Math.abs(s.stage[3] - 0.9) < 0.02,
 	`stage ${s.stage.map((v) => v.toFixed(2))}`);
 check('menu does not reopen on re-entry', s.menu === null);
+check('sitting down: the eyes are still at 1.89 m', Math.abs(s.head[1] - 1.89) < 0.005 && Math.abs(s.rig[1] - 0.74) < 0.005, `eyes ${s.head[1].toFixed(3)} m, raised ${s.rig[1].toFixed(3)} m`);
+// Stand up and press Recentre: measured again.
+await page.evaluate(() => window.__device.position.set(1.2, 1.75, 0.8));
+await frames(5);
+await page.evaluate(() => window.__svr.xr.menuAction('recentre'));
+await frames(5);
+s = await state();
+check('Recentre measures the height again', Math.abs(s.head[1] - 1.89) < 0.005 && Math.abs(s.rig[1] - 0.14) < 0.005, `eyes ${s.head[1].toFixed(3)} m, raised ${s.rig[1].toFixed(3)} m`);
 await shot('reentered');
 await page.evaluate(() => window.__svr.xr.end());
 await frames(5);

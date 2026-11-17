@@ -234,7 +234,7 @@ async function load(files, label, source = { type: 'file' }) {
 		// Links to other websites written inside a model are never followed.
 		const blocked = current.store?.blockedLinks() ?? 0;
 		// Small windows: get the files card out of the way of the model.
-		if (window.matchMedia('(max-width: 760px), (max-height: 520px)').matches) setCollapsed(true);
+		if (window.matchMedia('(max-width: 720px), (max-height: 520px)').matches) setCollapsed(true);
 		setStatus(`Loaded ${label}.${blocked ? ` ${blocked} link${blocked > 1 ? 's' : ''} to other websites inside the file ${blocked > 1 ? 'were' : 'was'} ignored.` : ''}`);
 		showStats();
 		// Once the textures have arrived: shrink any oversized ones and free
@@ -558,10 +558,11 @@ function setCollapsed(c) {
 }
 $('collapse').addEventListener('click', () => setCollapsed(!$('panel').classList.contains('collapsed')));
 
-// The files card stops above the bottom bar, whatever height the bar wraps to.
-const barHeight = () => document.documentElement.style.setProperty('--bar-h', `${$('bar').offsetHeight}px`);
-if ('ResizeObserver' in window) new ResizeObserver(barHeight).observe($('bar'));
-barHeight();
+// Narrow windows put the display card at the bottom: the files card and the
+// model details stop above it, whatever its height.
+const viewHeight = () => document.documentElement.style.setProperty('--view-h', `${$('view').offsetHeight}px`);
+if ('ResizeObserver' in window) new ResizeObserver(viewHeight).observe($('view'));
+viewHeight();
 
 // Dropping files anywhere on the page opens them (desktop browsers).
 window.addEventListener('dragover', (e) => { e.preventDefault(); document.body.classList.add('dropping'); });

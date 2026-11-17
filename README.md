@@ -9,8 +9,8 @@ It runs in the Meta Quest Browser: no app store, no developer mode, no sideloadi
 ## Using it
 
 1. Open the app's URL (GitHub Pages) in a browser.
-2. **Open file**, or paste a link (e.g. a Dropbox shared link) and press **Open from link**. No file to hand? **Try the example home**, a small two-storey house made for this viewer. Then press **Enter VR** below. The model's details show at the top right.
-3. The bar along the bottom is always on screen: choose the **Light** (morning by default, noon, sunset or night), switch **Shadows** and **Depth shading** on or off, and press **Enter VR**. The files card at the top left can be hidden with **–**.
+2. **Open file**, or paste a link (e.g. a Dropbox shared link) and press **Open from link**. No file to hand? **Try the example home**, a small two-storey house made for this viewer. The model's details show at the bottom right.
+3. In the card at the top right, choose the **Time of day** (morning by default, noon, sunset or night), switch **Shadows** and **Depth shading** on or off, and press the big **Enter VR** button. The files card at the top left can be hidden with **–**.
 4. Drag to orbit, scroll or pinch to zoom, right-drag to pan.
 5. Next time, tap the model under **Recent**: the last 5 models are kept in the browser, so reopening one needs no download. For a model opened from a link, **↻** downloads the latest version from the same link (handy after editing the home on the Mac). The last link you used is also remembered in the link box.
 
@@ -36,7 +36,7 @@ Press **Enter VR** once a model is open. In the headset, the menu switches betwe
 **Menu:** a glowing orb floats over each hand. Point at one with the other hand and pull the trigger, touch it with the other controller, or press **A** or **X**: the menu opens in front of you, with a drawing of the controllers and what each button does. **B** / **Y** or a click elsewhere closes it. It opens by itself the first time.
 
 **Dollhouse**
-- The home stands on a low museum plinth in a gallery room. You see it as if you were about 2 m tall, so it's easy to look into the rooms.
+- The home stands on a low museum plinth in a gallery room. You look down at it as a 2 m tall person would, whether you sit or stand, so it's easy to look into the rooms. If you change position, **Recentre** measures your height again.
 - **Thumbstick** left/right rotates it; up/down zooms it (½× to 4×).
 - Point the **laser** at it: an orange figure shows where you'd stand. **Trigger** takes you there at real size.
 - **Grip** and move your hand to lift it or move it; it never sinks into the plinth.
@@ -51,9 +51,9 @@ Press **Enter VR** once a model is open. In the headset, the menu switches betwe
 - **B** or **Y** goes back to the dollhouse.
 - Menu: **Dollhouse**, **Ceilings on/off**, **Light**, **Shadows**, **Turn**, **Height** (yours, 1.4, 1.7 or 2.0 m), **View**, **Exit VR**.
 
-**Light and shadows:** the sun comes from the right direction for your home, using the compass in the Sweet Home 3D file. Shadows are off by default; when on, they are computed once (not every frame), so walking stays smooth. With ceilings on, sunlight only enters through the windows; turn ceilings off to let it in from above. At sunset and at night the home's lamps glow. The same Light and Shadows settings are in the bar at the bottom of the 2D page; the light starts as morning.
+**Light and shadows:** the sun comes from the right direction for your home, using the compass in the Sweet Home 3D file. Shadows are off by default; when on, they are computed once (not every frame), so walking stays smooth. With ceilings on, sunlight only enters through the windows; turn ceilings off to let it in from above. At sunset and at night the home's lamps glow. The same settings are in the card at the top right of the 2D page; the light starts as morning.
 
-**Depth shading** (headset only, off by default): soft dark gradients where walls, floors and ceilings meet and where furniture touches them, and a slightly different brightness for faces pointing different ways, so white walls don't melt into each other. Switch it on in the page's bottom bar or with **Depth** in the headset menu. It is prepared once per model in the background (a few seconds; the menu shows a percentage) and costs nothing per frame afterwards.
+**Depth shading** (headset only, off by default): soft dark gradients where walls, floors and ceilings meet and where furniture touches them, and a slightly different brightness for faces pointing different ways, so white walls don't melt into each other. Switch it on in the page's top-right card or with **Depth** in the headset menu. It is prepared once per model in the background (a few seconds; the menu shows a percentage) and costs nothing per frame afterwards.
 
 ## Which headsets
 
