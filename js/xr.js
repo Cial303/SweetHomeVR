@@ -33,6 +33,13 @@ import { XRInput, TeleportArc, yawOf } from './xr-input.js';
 const UP = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
 const PLINTH_HEIGHT = 0.6; // low table: you look down into the rooms
+// The model rests a few millimetres above the plinth, never exactly on it:
+// two surfaces at the same height fight for the same pixels ("z-fighting"),
+// which showed as flickering polygon-shaped patches all over the floors.
+const PLINTH_REST = PLINTH_HEIGHT + 0.004;
+// Clip planes for the headset, set explicitly: left alone they come from how
+// the 2D page framed the model, which can clip things held near the face.
+const XR_NEAR = 0.05, XR_FAR = 300;
 const PLINTH_MARGIN = 0.2; // table left around the model (it is ~1.2 m across)
 const PLINTH_FRONT_GAP = 0.3; // from where you stand to the plinth's front edge
 // VR dollhouse: you look down at it as a 2 m tall person would, whatever your
@@ -74,7 +81,7 @@ export class XRExperience {
 		this.view = safeGet(KEYS.view) === 'ar' ? 'ar' : 'vr'; // what is shown (AR sessions only)
 		this.mode = null; // 'dollhouse' | 'walk'
 		this.plinthDistance = 1; // centre of the plinth in front of the user; set by buildPlinth()
-		this.doll = { pos: new THREE.Vector3(0, PLINTH_HEIGHT, -this.plinthDistance), yaw: 0, zoom: 1 };
+		this.doll = { pos: new THREE.Vector3(0, PLINTH_REST, -this.plinthDistance), yaw: 0, zoom: 1 };
 		this.lift = 0; // the rig's height above the floor the user stands on
 		this.dollLift = DOLLHOUSE_LIFT_START; // VR dollhouse lift, from the measured head height
 		this.grab = null; // dollhouse: grabbing the model
@@ -132,7 +139,8 @@ export class XRExperience {
 		pedestal.name = 'plinth';
 		this.pedestal = pedestal;
 		this.plinthMaterials = {
-			top: new THREE.MeshLambertMaterial({ color: 0xffffff }),
+			// (Drawn a touch further back in depth as well, so the model's floor always wins.)
+			top: new THREE.MeshLambertMaterial({ color: 0xffffff, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 }),
 			body: new THREE.MeshLambertMaterial({ color: 0xf2f1ee }),
 			base: new THREE.MeshLambertMaterial({ color: 0x33383d }),
 		};
@@ -355,6 +363,9 @@ export class XRExperience {
 		this.sessionMode = kind;
 		this.depth?.setActive(true); // depth shading shows in the headset only
 		this.saved = { background: this.scene.background };
+		this.camera.near = XR_NEAR;
+		this.camera.far = XR_FAR;
+		this.camera.updateProjectionMatrix();
 		this.scene.background = null; // the sky spheres draw the VR view; null shows passthrough
 		session.addEventListener('end', () => this.handleEnd());
 		// Holding the Meta button re-centres the headset: follow it.
@@ -673,7 +684,7 @@ export class XRExperience {
 	// -----------------------------------------------------------------------
 
 	resetDollhouse() {
-		this.doll.pos.set(0, PLINTH_HEIGHT, -this.plinthDistance);
+		this.doll.pos.set(0, PLINTH_REST, -this.plinthDistance);
 		this.doll.yaw = 0;
 		this.doll.zoom = 1;
 	}
@@ -818,7 +829,7 @@ export class XRExperience {
 			// Never push it into the plinth (or, off the plinth, below the floor).
 			const { W, D } = this.plinthSize;
 			const onPlinth = this.vrView && Math.abs(this.doll.pos.x) < W / 2 && Math.abs(this.doll.pos.z + this.plinthDistance) < D / 2;
-			this.doll.pos.y = Math.max(this.doll.pos.y, onPlinth ? PLINTH_HEIGHT : 0);
+			this.doll.pos.y = Math.max(this.doll.pos.y, onPlinth ? PLINTH_REST : 0);
 		}
 
 		// Thumbsticks: left/right rotates, up/down zooms (either controller).
@@ -1215,7 +1226,7 @@ function buildGallery() {
 		const c = new THREE.Group();
 		const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.08, h + 0.08, 0.05), mats.dark);
 		const art = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshLambertMaterial({ map: artTexture(seed, w / h) }));
-		art.position.z = 0.026;
+		art.position.z = 0.031; // clear of the frame's front face (0.025), or the two flicker from afar
 		c.add(frame, art);
 		c.position.set(x, y, z);
 		c.rotation.y = ry;

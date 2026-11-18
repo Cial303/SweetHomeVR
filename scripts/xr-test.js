@@ -141,6 +141,12 @@ let s = await state();
 check('enters the VR dollhouse', s.presenting && s.mode === 'dollhouse' && s.showroom, JSON.stringify({ mode: s.mode, session: s.session }));
 check('dollhouse: eyes where a 2 m person\'s would be (1.89 m)', Math.abs(s.head[1] - 1.89) < 0.005 && Math.abs(s.rig[1] - 0.29) < 0.005, `eyes ${s.head[1].toFixed(3)} m, raised ${s.rig[1].toFixed(3)} m`);
 check('an orb on each hand', s.orbs === 2);
+{
+	// No two large surfaces at the same height: the model's floor is clear of the plinth top.
+	const gap = await page.evaluate(() => { const x = window.__svr.xr, V = x.rig.position.constructor; const floor = x.centerer.localToWorld(new V(0, x.model.bounds.min.y, 0)).y;
+		const top = Math.max(...x.pedestal.children.map((m) => m.getWorldPosition(new V()).y + m.geometry.parameters.height / 2)); return { gap: floor - top, near: x.camera.near, far: x.camera.far }; });
+	check('the model\'s floor is clear of the plinth top (no flicker)', gap.gap > 0.003 && gap.gap < 0.006 && gap.near === 0.05 && gap.far === 300, JSON.stringify(gap));
+}
 check('scale figure stands by the dollhouse at the model\'s scale', s.figure && Math.abs(s.figureHeight - 1.75 * s.anchorScale) < 1e-3, `figure ${s.figureHeight.toFixed(3)} m, scale ${s.anchorScale.toFixed(3)}`);
 check('menu opens once on entry', s.menu === 'dollhouse');
 await shot('dollhouse-menu');
@@ -177,13 +183,14 @@ s = await state();
 check('grip moves the model', Math.hypot(s.pos[0] - pos0[0], s.pos[1] - pos0[1]) > 0.2, `${pos0.map((v) => v.toFixed(2))} -> ${s.pos.map((v) => v.toFixed(2))}`);
 await shot('moved');
 
-// Pushing it down stops at the plinth top (0.6 m).
+// Pushing it down stops just above the plinth top (0.6 m): never exactly on
+// it, or the floor and the plinth flicker through each other.
 await aim('left', [-0.2, 1.0, -0.4], [-0.2, 0.8, -1.4]); await frames(3);
 await button('left', 'squeeze', 1); await frames(4);
 await aim('left', [-0.2, 0.3, -0.4], [-0.2, 0.1, -1.4]); await frames(8);
 s = await state();
 await button('left', 'squeeze', 0); await frames(4);
-check('model stays on top of the plinth', Math.abs(s.pos[1] - 0.6) < 1e-6, `y ${s.pos[1].toFixed(3)}`);
+check('model stays on top of the plinth, a few millimetres clear of it', s.pos[1] > 0.6 + 0.003 && s.pos[1] < 0.6 + 0.006, `y ${s.pos[1].toFixed(4)}`);
 
 // Left orb (hand raised into view): the right laser makes it glow, a click opens the menu.
 await aim('left', [-0.12, 1.2, -0.4], [0.1, 0.9, -1.2]);
