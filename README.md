@@ -17,10 +17,12 @@ It runs in the Meta Quest Browser: no app store, no developer mode, no sideloadi
 ## Using it
 
 1. Open the app's URL (GitHub Pages) in a browser.
-2. **Open file**, or paste a link (e.g. a Dropbox shared link) and press **Load**. No file to hand? **Try the example home**, a small two-storey house made for this viewer. The model's details show at the bottom right.
+2. **Open file**, drop a file anywhere on the page (on a computer), or paste a link (e.g. a Dropbox shared link) and press **Load**. No file to hand? **Try the example home**, a small two-storey house made for this viewer. The model's details show at the bottom right.
 3. In the card at the top right, choose the **Time of day** (morning by default, noon, sunset or night), switch **Shadows** and **Depth shading** on or off, and press the big **Enter VR** button. The files card at the top left can be hidden with **–**.
 4. Drag to orbit, scroll or pinch to zoom, right-drag to pan.
 5. Next time, tap the model under **Recent**: the last 5 models are kept in the browser, so reopening one needs no download. For a model opened from a link, **↻** downloads the latest version from the same link (handy after editing the home on the Mac). The last link you used is also remembered in the link box.
+
+**No typing in the headset:** on a computer or phone, paste the model's link into the page and press **Send to my Quest**. Meta's "Open in VR" page opens (you need to be signed in to your Meta account, with the headset on and online); pick your headset, and the viewer opens there with the link already filled in. Press **Load**. Without a link it simply opens the viewer on the headset. A file picked or dropped on the computer cannot be sent this way: put it in Dropbox and use its link.
 
 **Tip for Dropbox links:** a Dropbox shared link stays the same when you overwrite the file with the same name. Save your home under a fixed name (e.g. `My home.sh3d`), share it once, and on the Quest you only ever type that link once; after that use **↻**.
 
@@ -95,6 +97,7 @@ Without a key the button is simply hidden. The Chooser script is the only file l
 
 - **Your home stays on your device.** Models are read in the browser. Nothing is uploaded, and there is no analytics or tracking. Recent models are kept in the browser's own storage (IndexedDB) on that device; remove them with the × beside each one.
 - **Opening a model cannot contact other websites.** A model file can contain links to images on other servers. They are never followed (the status line says how many were ignored), so a file cannot be used to see who opens it.
+- **Send to my Quest.** This uses Meta's [Web Launch](https://developers.meta.com/horizon/documentation/web/web-launch/): the viewer's address, with the link you pasted, is handed to Meta's page so it can open on your headset. Nothing is sent unless you press the button.
 - **Links.** Only `https://` links are downloaded, up to 500 MB, without cookies or a referrer. A `?model=` address that points to another site is not opened automatically: it is put in the link box and waits for you to press **Load**.
 - **Oversized files.** Archives that would unpack to more than 1 GB or 50,000 files are refused before unpacking, and textures above 2048 pixels are shrunk to fit a Quest 2's memory. The limits are in `config.js` and `js/formats.js`.
 - **The page only runs its own code.** A Content Security Policy in `index.html` allows scripts from this site only, with the import map pinned by its hash. All libraries are vendored; nothing loads from a CDN. If you edit the import map, `npm test` tells you the new hash.

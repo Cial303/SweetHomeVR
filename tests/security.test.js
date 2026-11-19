@@ -8,7 +8,7 @@ import { zipSync, strToU8 } from 'fflate';
 import zlib from 'node:zlib';
 import { EntryStore, UserError, openFiles, WHITE_PIXEL } from '../js/formats.js';
 import { parseXml, parseHome } from '../js/sh3d.js';
-import { checkLink, directLink, fileNameOf } from '../js/links.js';
+import { checkLink, directLink, fileNameOf, sendToQuestUrl } from '../js/links.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -94,6 +94,28 @@ test('only https links, or links on this site, may be downloaded', () => {
 	assert.equal(fileNameOf('https://h/a/My%20Home.sh3d'), 'My Home.sh3d');
 	assert.equal(fileNameOf('https://h/a/bad%E0%A4%A.sh3d'), 'bad%E0%A4%A.sh3d');
 	assert.equal(fileNameOf('not a url'), 'model');
+});
+
+test('Send to my Quest: Meta\'s Web Launch address carries the viewer and the pasted link', () => {
+	const page = 'https://example.github.io/SweetHomeVR/?model=old#x';
+	const dropbox = 'https://www.dropbox.com/scl/fi/abc/My%20home.sh3d?rlkey=k&dl=0';
+	const launch = new URL(sendToQuestUrl(page, dropbox));
+	assert.equal(launch.origin + launch.pathname, 'https://www.oculus.com/open_url/');
+	// What opens on the headset: this viewer, with the link as ?model= (old query and # removed).
+	const target = new URL(launch.searchParams.get('url'));
+	assert.equal(target.origin + target.pathname, 'https://example.github.io/SweetHomeVR/');
+	assert.equal(target.searchParams.get('model'), dropbox); // survives both rounds of encoding unchanged
+	assert.equal(target.hash, '');
+	assert.deepEqual([...launch.searchParams.keys()], ['url']);
+	// On arrival it is an ordinary cross-site ?model= link: allowed, but it waits for Load.
+	const arrived = checkLink(target.searchParams.get('model'), target.toString());
+	assert.equal(arrived.ok, true);
+	assert.equal(arrived.sameOrigin, false);
+	// Without a link, the viewer alone.
+	assert.equal(new URL(sendToQuestUrl(page)).searchParams.get('url'), 'https://example.github.io/SweetHomeVR/');
+	// Web Launch only takes https pages: nothing is built from a local test server.
+	assert.equal(sendToQuestUrl('http://localhost:8123/', dropbox), null);
+	assert.equal(sendToQuestUrl('not a url'), null);
 });
 
 test('damaged Home.xml values cannot put NaN or Infinity into the scene', () => {

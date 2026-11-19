@@ -10,7 +10,7 @@ import { optimiseModel } from './optimise.js';
 import { XRExperience } from './xr.js';
 import { Lighting, TIMES } from './lighting.js';
 import { DepthShading } from './depth.js';
-import { checkLink, fileNameOf } from './links.js';
+import { checkLink, fileNameOf, sendToQuestUrl } from './links.js';
 import { listRecents, getRecent, addRecent, removeRecent, getLastLink, setLastLink } from './storage.js';
 
 const $ = (id) => document.getElementById(id);
@@ -484,9 +484,23 @@ function updateXRButtons() {
 	layoutWelcomeSoon(); // (called whenever loading starts or ends, or VR support becomes known)
 	const box = $('xr-buttons');
 	box.replaceChildren();
+	// On a computer or phone: a button that opens this viewer on the user's
+	// Quest (with the pasted link), so nothing has to be typed in the headset.
+	const send = () => {
+		const b = document.createElement('button');
+		b.id = 'send-quest';
+		b.className = xrSupport.vr || xrSupport.ar ? 'outline' : 'xr';
+		b.textContent = 'Send to my Quest';
+		b.title = 'Opens this viewer on your headset through Meta\u2019s \u201cOpen in VR\u201d page, with the link you pasted. The link is passed to Meta to do this.';
+		b.addEventListener('click', sendToQuest);
+		const note = document.createElement('span');
+		note.className = 'hint';
+		note.textContent = 'Opens this viewer on your headset, with the link you pasted: nothing to type there.';
+		return [b, note];
+	};
 	if (!xrSupport.vr && !xrSupport.ar) {
-		// A desktop or phone browser: say where the headset view is.
-		if (xrChecked) { const note = document.createElement('span'); note.className = 'hint'; note.textContent = 'To enter VR, open this page in the Meta Quest Browser.'; box.append(note); }
+		if (xrChecked && !ON_HEADSET) box.append(...send());
+		else if (xrChecked) { const note = document.createElement('span'); note.className = 'hint'; note.textContent = 'This browser cannot enter VR.'; box.append(note); }
 		return;
 	}
 	// One button: an AR-capable session can switch between VR and passthrough
@@ -510,6 +524,25 @@ function updateXRButtons() {
 		}
 	});
 	box.append(b);
+	if (!ON_HEADSET) box.append(...send()); // e.g. a PC with a headset attached: both ways in
+}
+
+/** True in a headset's own browser (Meta Quest Browser), where "Send to my Quest" and dropping files make no sense. */
+const ON_HEADSET = /OculusBrowser|\bQuest\b/i.test(navigator.userAgent);
+
+/** Opens Meta's "Open in VR" page for this viewer, with the pasted link if there is one. */
+function sendToQuest() {
+	const typed = $('link-input').value.trim();
+	if (typed) {
+		const link = checkLink(typed, location.href);
+		if (!link.ok) { setStatus(link.error, true); return; }
+	}
+	const url = sendToQuestUrl(location.href, typed);
+	if (!url) { setStatus('Send to my Quest only works from the https address of this page, not from a local test server.', true); return; }
+	window.open(url, '_blank', 'noopener,noreferrer');
+	setStatus(typed
+		? 'Meta\u2019s \u201cOpen in VR\u201d page opened in a new tab. Pick your headset there: the viewer opens on it with your link filled in. Then press Load.'
+		: 'Meta\u2019s \u201cOpen in VR\u201d page opened in a new tab. Pick your headset there to open the viewer on it. To send a model as well, paste its link first: a file picked on this computer cannot be sent.');
 }
 
 XRExperience.supported().then((s) => { xrSupport = s; xrChecked = true; updateXRButtons(); });
@@ -570,6 +603,7 @@ function layoutWelcome() {
 	if (!show) return;
 	const p = $('panel').getBoundingClientRect(), v = $('view').getBoundingClientRect();
 	const [one, two] = w.querySelectorAll('.step'), note = w.querySelector('.note');
+	w.querySelector('.drop').hidden = !CAN_DROP; // "Drop a file here to start": computers only
 	const H = window.innerHeight, strip = v.left - p.right;
 	const place = (el, left, top, width) => Object.assign(el.style, { left: `${left}px`, top: `${top}px`, width: `${width}px` });
 	note.hidden = false;
@@ -590,7 +624,10 @@ function layoutWelcome() {
 	place(one, p.left, p.bottom + 12, p.width);
 	place(two, v.left, v.bottom + 12, v.width);
 	let bottom = Math.max(p.bottom + 12 + one.offsetHeight, v.bottom + 12 + two.offsetHeight);
-	place(note, 0, bottom + 26, window.innerWidth);
+	// The centre lines: in the middle of the space left below the notes.
+	const centred = (from) => Math.max(from + 26, (from + H - note.offsetHeight) / 2);
+	place(note, 0, 0, window.innerWidth);
+	note.style.top = `${centred(bottom)}px`;
 
 	if (bottom > H - 6 && strip >= 240) {
 		// No room under a card (a long Recent list, a short window): between the cards.
@@ -607,11 +644,14 @@ function layoutWelcome() {
 		place(one, p.right, top1, width);
 		place(two, v.left - width, top2, width);
 		bottom = Math.max(top1 + one.offsetHeight, top2 + two.offsetHeight);
-		place(note, p.right, Math.max(bottom + 30, Math.min(H * 0.62, H - 70)), strip);
+		place(note, p.right, 0, strip);
+		note.style.top = `${centred(bottom)}px`;
 	}
 	note.hidden = note.offsetTop + note.offsetHeight > H - 6; // (the last line goes first when space runs out)
 	w.hidden = bottom > H - 6; // a very short window: no room at all
 }
+/** True where files can be dragged in with a mouse: computers, not headsets or phones. */
+const CAN_DROP = !/OculusBrowser|\bQuest\b/i.test(navigator.userAgent) && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
 let welcomeQueued = false;
 /** Lays the welcome out after the page has settled (several changes in one frame cost one layout). */
 function layoutWelcomeSoon() {
@@ -637,14 +677,29 @@ const viewHeight = () => document.documentElement.style.setProperty('--view-h', 
 if ('ResizeObserver' in window) new ResizeObserver(viewHeight).observe($('view'));
 viewHeight();
 
-// Dropping files anywhere on the page opens them (desktop browsers).
-window.addEventListener('dragover', (e) => { e.preventDefault(); document.body.classList.add('dropping'); });
-window.addEventListener('dragleave', () => document.body.classList.remove('dropping'));
+// Dropping files anywhere on the page opens them (computers). While files are
+// dragged over the window a "Drop to open" frame shows; a dragged link goes
+// into the link box instead and waits for Load.
+const draggingFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+window.addEventListener('dragover', (e) => {
+	e.preventDefault(); // (also stops the browser from navigating to a dropped file)
+	if (draggingFiles(e)) { e.dataTransfer.dropEffect = 'copy'; $('dropzone').hidden = false; }
+});
+window.addEventListener('dragleave', (e) => { if (!e.relatedTarget) $('dropzone').hidden = true; }); // left the window
 window.addEventListener('drop', async (e) => {
 	e.preventDefault();
-	document.body.classList.remove('dropping');
+	$('dropzone').hidden = true;
 	const picked = [...(e.dataTransfer?.files || [])];
-	if (!picked.length) return;
+	if (!picked.length) {
+		const dropped = (e.dataTransfer?.getData('text/uri-list') || e.dataTransfer?.getData('text/plain') || '').split('\n')[0].trim();
+		if (/^https?:\/\//i.test(dropped)) {
+			setCollapsed(false);
+			$('link-input').value = dropped;
+			$('open-link').classList.add('primary');
+			setStatus('Link dropped. Press Load to open it.');
+		}
+		return;
+	}
 	const files = await Promise.all(picked.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }))).catch(() => null);
 	if (!files) { setStatus('Those files could not be read.', true); return; }
 	load(files, picked.length === 1 ? picked[0].name : `${picked.length} files`, { type: 'file' }).catch(() => {});
@@ -677,6 +732,7 @@ if (initial) {
 		ready = loadUrl(initial, { remember: false }).then(() => true, () => false);
 	} else if (link.ok) {
 		$('link-input').value = initial;
+		$('open-link').classList.add('primary'); // the next step, e.g. after "Send to my Quest"
 		setStatus(`This page was opened with a link to a model on ${link.host}. Press “Load” if you trust it.`);
 	} else {
 		setStatus(link.error, true);

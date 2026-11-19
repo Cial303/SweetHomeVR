@@ -117,7 +117,8 @@
 		.switch input:focus-visible { outline: 2px solid var(--xr); outline-offset: 2px; }
 		.switch small { display: block; font-size: 11.5px; color: var(--muted); line-height: 1.2; }
 		/* The headset button: the largest thing on the page. */
-		#xr-buttons { display: flex; margin-top: 2px; }
+		#xr-buttons { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
+		#xr-buttons .hint { text-align: center; }
 		button.xr { width: 100%; background: var(--xr); border-color: var(--xr); color: var(--xr-text); font-weight: 700; font-size: 21px;
 			min-height: 64px; border-radius: 12px; white-space: nowrap; box-shadow: 0 4px 14px rgba(47, 95, 208, .35); }
 		button.xr:hover { filter: brightness(1.1); border-color: var(--xr); }
@@ -172,7 +173,11 @@
 		/* The arrow is drawn pointing left; the second note's is mirrored. */
 		#welcome .arrow { flex: 0 1 86px; min-width: 46px; aspect-ratio: 90 / 44; }
 		#welcome .step[data-dir="right"] .arrow { transform: scaleX(-1); }
-		#welcome .note { position: absolute; margin: 0; padding: 0 12px; text-align: center; font-size: 19px; opacity: .85; transform: rotate(-1deg); }
+		#welcome .note { position: absolute; margin: 0; padding: 0 12px; text-align: center; font-size: 19px; transform: rotate(-1deg); }
+		#welcome .note span { display: block; opacity: .85; }
+		/* Computers only: the page itself is a drop target. A dashed frame, as if drawn round the words. */
+		#welcome .drop { display: inline-block; margin-bottom: 14px; padding: 16px 30px 12px; border: 2.5px dashed currentColor; border-radius: 22px 18px 24px 16px; font-size: 27px; }
+		#welcome .drop[hidden] { display: none; }
 		/* The usual layout: each note under its card ("below"); with the cards
 		   stacked on a narrow window, both notes in the gap between them
 		   ("stack"). The arrow comes first and points up or down. "side" (notes
@@ -184,8 +189,11 @@
 		#welcome[data-layout="stack"] .step[data-dir="right"] .arrow { transform: rotate(-90deg) scaleY(-1); }
 		#welcome[data-layout="below"] .text { max-width: none; }
 
-		/* Dropping files on the page */
-		body.dropping #viewport { outline: 3px dashed var(--accent); outline-offset: -10px; }
+		/* While files are dragged over the window: a frame over everything. */
+		#dropzone { position: fixed; inset: 10px; z-index: 10; pointer-events: none; display: grid; place-items: center;
+			border: 4px dashed var(--accent); border-radius: 22px; background: color-mix(in srgb, var(--bg) 72%, transparent);
+			font-family: "Kalam", "Bradley Hand", cursive; font-weight: 700; font-size: 40px; color: var(--accent); }
+		#dropzone[hidden] { display: none; }
 	</style>
 	<script type="importmap">
 	{
@@ -213,7 +221,10 @@
 			<div class="text"><strong>Set the mood</strong><span>pick the time of day and the shadows</span></div>
 			<svg class="arrow" viewBox="0 0 90 44" aria-hidden="true"><path d="M86 30 C 64 8, 34 6, 8 20"/><path d="M14.7 10.1 L8 20 L20 20"/></svg>
 		</div>
-		<p class="note">Your home never leaves this device.</p>
+		<div class="note">
+			<strong class="drop" hidden>Drop a file here to start</strong>
+			<span>Your home never leaves this device.</span>
+		</div>
 	</div>
 
 	<!-- Files: open a model, or reopen a recent one. -->
@@ -278,6 +289,9 @@
 
 	<!-- Technical details of the open model, over the bottom right of the view. -->
 	<div id="stats" aria-live="polite"></div>
+
+	<!-- Shown while files are dragged over the window. -->
+	<div id="dropzone" hidden>Drop to open</div>
 
 	<script type="module" src="./js/main.js"></script>
 </body>

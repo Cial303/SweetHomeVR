@@ -126,7 +126,13 @@ check('model loads', await page.evaluate(() => window.__svr.ready));
 await frames(5);
 check('welcome notes go once a model is open', (await welcome()).shown === false);
 const enterVR = page.locator('#xr-buttons button', { hasText: 'Enter VR' });
-check('one Enter VR button', await enterVR.count() === 1 && await page.locator('#xr-buttons button').count() === 1);
+check('one Enter VR button', await enterVR.count() === 1 && await page.locator('#xr-buttons button.xr').count() === 1);
+// "Send to my Quest" is for computers and phones: in a headset's own browser (which the emulator says it is) it is not offered.
+{
+	const ua = await page.evaluate(() => navigator.userAgent);
+	const onHeadset = /OculusBrowser|\bQuest\b/i.test(ua);
+	check('Send to my Quest is offered on computers only', await page.locator('#send-quest').count() === (onHeadset ? 0 : 1), `headset browser: ${onHeadset}`);
+}
 
 // Head 1.6 m up, looking slightly down at the plinth.
 await page.evaluate(() => window.__device.position.set(0, 1.6, 0));

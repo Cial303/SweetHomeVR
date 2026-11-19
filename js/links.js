@@ -41,3 +41,27 @@ export function fileNameOf(url) {
 	try { last = new URL(url).pathname.split('/').pop() || 'model'; } catch { /* keep the default */ }
 	try { return decodeURIComponent(last); } catch { return last; }
 }
+
+/**
+ * The address that sends this viewer to the user's Quest: Meta's "Web
+ * Launch" page (https://developers.meta.com/horizon/documentation/web/web-launch/),
+ * which opens an https page in the headset's browser. With `link`, the viewer
+ * opens there with that model link filled in (as ?model=), so nothing has to
+ * be typed in the headset.
+ *
+ * @param pageUrl  this page's address (location.href)
+ * @param link     a model link as the user pasted it, or '' to send the viewer alone
+ * @returns the address to open on the computer or phone, or null if this page
+ *          is not served over https (Web Launch only accepts https pages)
+ */
+export function sendToQuestUrl(pageUrl, link = '') {
+	let page;
+	try { page = new URL(pageUrl); } catch { return null; }
+	if (page.protocol !== 'https:') return null;
+	page.search = '';
+	page.hash = '';
+	if (link) page.searchParams.set('model', link);
+	const launch = new URL('https://www.oculus.com/open_url/');
+	launch.searchParams.set('url', page.toString());
+	return launch.toString();
+}
