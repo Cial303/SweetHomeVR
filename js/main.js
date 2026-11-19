@@ -10,7 +10,7 @@ import { optimiseModel } from './optimise.js';
 import { XRExperience } from './xr.js';
 import { Lighting, TIMES } from './lighting.js';
 import { DepthShading } from './depth.js';
-import { checkLink, fileNameOf, sendToQuestUrl } from './links.js';
+import { checkLink, fileNameOf, sendToQuestUrl, resolveOneDrive, resolveGoogleDrive, looksLikeWebPage, LinkError } from './links.js';
 import { isPairId } from './transfer.js';
 import { Sharer, Joiner } from './pairing.js';
 import { listRecents, getRecent, addRecent, removeRecent, getLastLink, setLastLink } from './storage.js';
@@ -330,12 +330,14 @@ function frame(view = 'iso') {
  * Downloads a URL into bytes, showing progress in the status line.
  * no-store: after editing the home on the Mac, always get the new version.
  */
-async function download(url, name, expectedSize = 0) {
+async function download(url, name, expectedSize = 0, init = {}) {
 	// A size limit, so a wrong or hostile link cannot fill the memory.
 	const max = CONFIG.maxDownloadMB * 1048576;
 	const tooBig = () => new UserError(`That file is larger than ${CONFIG.maxDownloadMB} MB, which is too large to open here.`);
-	// No cookies and no "where from" header go to the other site.
-	const res = await fetch(url, { cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' });
+	if (expectedSize > max) throw tooBig();
+	// No cookies and no "where from" header go to the other site (Google Drive
+	// is the exception: its key is checked against this site's origin).
+	const res = await fetch(url, { cache: 'no-store', referrerPolicy: 'no-referrer', ...init, credentials: 'omit' });
 	if (!res.ok) throw new Error(`HTTP ${res.status}`);
 	const total = expectedSize || Number(res.headers.get('Content-Length')) || 0;
 	if (total > max) { res.body?.cancel().catch(() => {}); throw tooBig(); }
@@ -362,18 +364,50 @@ async function download(url, name, expectedSize = 0) {
 	return bytes;
 }
 
+/** What to do when a link cannot be downloaded from here (said on the device in hand). */
+const linkWayRound = () => (ON_HEADSET
+	? 'Instead: open the link in a browser tab here, download the file, then press Open file and pick it from Downloads.'
+	: 'Instead: download the file, open it here, then use Send to my Quest.');
+
 async function loadUrl(url, { remember = true } = {}) {
 	url = url.trim();
 	const link = checkLink(url, location.href);
 	if (!link.ok) { setStatus(link.error, true); throw new UserError(link.error); }
-	const name = fileNameOf(link.url);
-	setStatus(`Downloading ${name}…`);
+	if (link.problem) {
+		const text = link.blocked ? `${link.problem} ${linkWayRound()}` : link.problem;
+		setStatus(text, true);
+		throw new UserError(text);
+	}
+	const service = link.service;
+	if (link.googleDrive && !CONFIG.googleApiKey) {
+		const text = `This copy of the viewer is not set up for Google Drive links (config.js has no Google API key). ${linkWayRound()}`;
+		setStatus(text, true);
+		throw new UserError(text);
+	}
+	let name = fileNameOf(link.url);
+	setStatus(`Downloading ${link.googleDrive || link.oneDrive ? `from ${service}` : name}…`);
 	let bytes;
 	try {
-		bytes = await download(link.url, name);
+		let from = link.url;
+		let size = 0;
+		let init = {};
+		if (link.googleDrive) ({ url: from, name, size, init } = await resolveGoogleDrive(link.googleDrive, CONFIG.googleApiKey));
+		if (link.oneDrive) ({ url: from, name, size } = await resolveOneDrive(link.oneDrive));
+		bytes = await download(from, name, size, init);
+		// A private link usually answers with a sign-in page instead of the file.
+		if (looksLikeWebPage(bytes)) {
+			throw new UserError(service
+				? `${service} sent a web page instead of the file: the link is probably not public. Share it with “Anyone with the link” and copy the link again.`
+				: 'That link opens a web page, not a model file. Use a link that downloads the file itself.');
+		}
 	} catch (e) {
-		setStatus(e instanceof UserError ? e.message : `Could not download that link (${e.message}). For Dropbox, use a shared link to a single file.`, true);
-		throw e;
+		let text;
+		if (e instanceof UserError || e instanceof LinkError) text = e.message;
+		else if (/^HTTP (401|403|404)/.test(e.message)) text = `${service || 'That site'} would not give the file (${e.message}). Check the link is shared with “Anyone with the link”.`;
+		else if (e instanceof TypeError) text = `${service || 'That site'} does not let other websites download this file. ${linkWayRound()}`;
+		else text = `Could not download that link (${e.message}).`;
+		setStatus(text, true);
+		throw e instanceof UserError ? e : new UserError(text);
 	}
 	if (remember) { setLastLink(url); $('link-input').value = url; }
 	return load([{ name, bytes }], name, { type: 'link', url });

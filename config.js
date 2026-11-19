@@ -4,6 +4,13 @@ export const CONFIG = {
 	// Filled in during phase 4 (Dropbox Chooser).
 	dropboxAppKey: '',
 
+	// Google Drive links (js/links.js): Google only serves shared files to other
+	// websites through its Drive API, which needs an API key. Public by design,
+	// like the Dropbox app key: in Google Cloud, limit it to the "Google Drive
+	// API" and to this site's address (README, "Google Drive links"). Empty:
+	// Google Drive links explain how to open the file another way.
+	googleApiKey: '',
+
 	// Warn (but still load) above this many triangles; Quest 2 is a phone GPU.
 	triangleWarning: 1_500_000,
 

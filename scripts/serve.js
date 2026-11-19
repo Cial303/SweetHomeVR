@@ -4,6 +4,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const root = path.resolve(import.meta.dirname, '..');
 const port = Number(process.env.PORT || 8123);
@@ -30,7 +31,8 @@ export function startServer(p = port) {
 	return new Promise((resolve) => server.listen(p, '127.0.0.1', () => resolve(server)));
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// (pathToFileURL: the folder's path may contain spaces.)
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
 	await startServer();
 	console.log(`Serving ${root} at http://localhost:${port}/`);
 }

@@ -17,7 +17,7 @@ It runs in the Meta Quest Browser: no app store, no developer mode, no sideloadi
 ## Using it
 
 1. Open the app's URL (GitHub Pages) in a browser.
-2. **Open file**, drop a file anywhere on the page (on a computer), or paste a link (e.g. a Dropbox shared link) and press **Load**. No file to hand? **Try the example home**, a small two-storey house made for this viewer. The model's details show at the bottom right.
+2. **Open file**, drop a file anywhere on the page (on a computer), or paste a share link (Dropbox, Google Drive, OneDrive, GitHub; see [Links](#links-from-storage-services)) and press **Load**. No file to hand? **Try the example home**, a small two-storey house made for this viewer. The model's details show at the bottom right.
 3. In the card at the top right, choose the **Time of day** (morning by default, noon, sunset or night), switch **Shadows** and **Depth shading** on or off, and press the big **Enter VR** button. The files card at the top left can be hidden with **–**.
 4. Drag to orbit, scroll or pinch to zoom, right-drag to pan.
 5. Next time, tap the model under **Recent**: the last 5 models are kept in the browser, so reopening one needs no download. For a model opened from a link, **↻** downloads the latest version from the same link (handy after editing the home on the Mac). The last link you used is also remembered in the link box.
@@ -29,7 +29,39 @@ It runs in the Meta Quest Browser: no app store, no developer mode, no sideloadi
 
 The line under the button always says what will be sent.
 
-**Tip for Dropbox links:** a Dropbox shared link stays the same when you overwrite the file with the same name. Save your home under a fixed name (e.g. `My home.sh3d`), share it once, and on the Quest you only ever type that link once; after that use **↻**.
+### Links from storage services
+
+Share the **file** (not its folder) with **"Anyone with the link"**, copy the link, and paste it:
+
+| Service | Works? |
+| --- | --- |
+| Dropbox | Yes. |
+| Google Drive | Yes, once the site has a Google API key (below). |
+| OneDrive (personal) | Yes. |
+| GitHub (a file page, or a raw link) | Yes. |
+| Any other https address of the file | If that site lets other websites download it. |
+| OneDrive for work or school, iCloud Drive, Box, WeTransfer, MEGA | No: these never let another website download a file. |
+
+When a link can't be opened, the viewer says why and what to do instead. On the headset: open the link in a browser tab, download the file, then **Open file** and pick it from Downloads. On a computer: open the file and press **Send to my Quest**.
+
+The OneDrive route uses the same anonymous steps as OneDrive's own page for visitors who aren't signed in. It isn't an official API and could change. The Dropbox link rewrite is unofficial too.
+
+**Tip for Dropbox links:** a Dropbox shared link stays the same when you overwrite the file with the same name. Save your home under a fixed name (e.g. `My home.sh3d`), share it once, and on the Quest you only ever type that link once; after that use **↻**. Google Drive keeps the link too, if you replace the file with **Manage versions → Upload new version**.
+
+#### Google Drive links: the API key (once per site)
+
+Google only gives shared files to other websites through its Drive API, which needs a browser API key. The key is public by design, like the Dropbox app key, and it's free (no billing account).
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a project (any name).
+2. **APIs & Services → Library**: find **Google Drive API** and press **Enable**.
+3. **APIs & Services → Credentials → Create credentials → API key**.
+4. Edit the key:
+   - **Application restrictions → Websites**: add your site, e.g. `https://cial303.github.io/*`. Add `http://localhost:*/*` too, to test locally.
+   - **API restrictions → Restrict key → Google Drive API** only.
+   - Save.
+5. Put the key in `config.js` as `googleApiKey`, then commit and push.
+
+Forks need their own key, restricted to their own address.
 
 Supported files:
 
@@ -104,7 +136,7 @@ Without a key the button is simply hidden. The Chooser script is the only file l
 - **Opening a model cannot contact other websites.** A model file can contain links to images on other servers. They are never followed (the status line says how many were ignored), so a file cannot be used to see who opens it.
 - **Send to my Quest.** This uses Meta's [Web Launch](https://developers.meta.com/horizon/documentation/web/web-launch/): the viewer's address is handed to Meta's page so it can open on your headset, with the model's link or, for a file, a random one-time pairing name. Nothing is sent unless you press the button.
 - **Sending a file to the headset.** The two devices are introduced by [PeerJS](https://peerjs.com/)'s free public server (set in `config.js`), which sees only the pairing name and connection details. The file then goes directly between them over an encrypted WebRTC connection; if your network blocks a direct path, PeerJS's relay passes the encrypted bytes along without being able to read them. The headset connects only after you press **Receive**, accepts at most 500 MB, and opens what arrives with the same checks as any file. The pairing name works once, for 10 minutes. The page contacts PeerJS only when you use this.
-- **Links.** Only `https://` links are downloaded, up to 500 MB, without cookies or a referrer. A `?model=` address that points to another site is not opened automatically: it is put in the link box and waits for you to press **Load**.
+- **Links.** Only `https://` links are downloaded, up to 500 MB, without cookies or a referrer. Two services need one extra request first. For a OneDrive link, Microsoft's share API is asked for the file's download address. For a Google Drive link, Google's Drive API is asked, with the site's API key, and the site's address (not the page's full address) is sent so Google can check the key. A `?model=` address that points to another site is not opened automatically: it is put in the link box and waits for you to press **Load**.
 - **Oversized files.** Archives that would unpack to more than 1 GB or 50,000 files are refused before unpacking, and textures above 2048 pixels are shrunk to fit a Quest 2's memory. The limits are in `config.js` and `js/formats.js`.
 - **The page only runs its own code.** A Content Security Policy in `index.html` allows scripts from this site only, with the import map pinned by its hash. All libraries are vendored; nothing loads from a CDN. If you edit the import map, `npm test` tells you the new hash.
 - **Offline.** After the first visit the app's own files are kept by a service worker (`sw.js`), so the page opens without internet and your Recent models still load. Online, it always asks the server for the current files.
@@ -160,7 +192,7 @@ Where to start reading: [SPEC.md](SPEC.md) is the brief the project was built fr
 
 ```
 index.html        2D UI and import map
-config.js         Dropbox app key, defaults
+config.js         Dropbox app key, Google API key, defaults
 js/main.js        2D page, renderer, loading, UI
 js/xr.js          VR/AR session: gallery and dollhouse, walk mode, menu orbs
 js/xr-input.js    controllers, lasers, buttons, thumbsticks, teleport arc
@@ -169,7 +201,7 @@ js/lighting.js    time of day (sun from the home's compass) and shadows
 js/depth.js       depth shading for the headset: corner gradients baked per vertex
 js/optimise.js    merge geometry by material, BVH for raycasts
 js/storage.js     recent models (IndexedDB)
-js/links.js       which links may be downloaded; Dropbox link rewrite; Send to my Quest address (no DOM)
+js/links.js       which links may be downloaded; Dropbox, Google Drive, OneDrive, GitHub links; Send to my Quest address (no DOM)
 js/transfer.js    sending a file to the headset: the protocol and its checks (no DOM)
 js/pairing.js     the direct computer-to-headset link (PeerJS)
 js/sh3d.js        SH3D parser and scene builder (no DOM; Node-testable)
