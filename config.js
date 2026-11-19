@@ -9,7 +9,8 @@ export const CONFIG = {
 	// like the Dropbox app key: in Google Cloud, limit it to the "Google Drive
 	// API" and to this site's address (README, "Google Drive links"). Empty:
 	// Google Drive links explain how to open the file another way.
-	googleApiKey: '',
+	// (Project "sweet-home-vr"; key limited to https://cial303.github.io/* and the Drive API.)
+	googleApiKey: 'AIzaSyDsgM_iWjpLeiLBpJIJaoZSBQ6VjtPbSNo',
 
 	// Warn (but still load) above this many triangles; Quest 2 is a phone GPU.
 	triangleWarning: 1_500_000,
