@@ -36,7 +36,7 @@ Share the **file** (not its folder) with **"Anyone with the link"**, copy the li
 | Service | Works? |
 | --- | --- |
 | Dropbox | Yes. |
-| Google Drive | Yes, once the site has a Google API key (below). |
+| Google Drive | Yes. (A copy of the viewer on another address needs its own Google API key, below.) |
 | OneDrive (personal) | Yes. |
 | GitHub (a file page, or a raw link) | Yes. |
 | Any other https address of the file | If that site lets other websites download it. |
