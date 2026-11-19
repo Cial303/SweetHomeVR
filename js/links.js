@@ -50,17 +50,21 @@ export function fileNameOf(url) {
  * be typed in the headset.
  *
  * @param pageUrl  this page's address (location.href)
- * @param link     a model link as the user pasted it, or '' to send the viewer alone
+ * @param what     a model link (string), or { model: link } or { pair: pairing
+ *                 name } (a file on this computer, sent over a direct link: pairing.js);
+ *                 nothing to send the viewer alone
  * @returns the address to open on the computer or phone, or null if this page
  *          is not served over https (Web Launch only accepts https pages)
  */
-export function sendToQuestUrl(pageUrl, link = '') {
+export function sendToQuestUrl(pageUrl, what = '') {
+	const { model = '', pair = '' } = typeof what === 'string' ? { model: what } : what;
 	let page;
 	try { page = new URL(pageUrl); } catch { return null; }
 	if (page.protocol !== 'https:') return null;
 	page.search = '';
 	page.hash = '';
-	if (link) page.searchParams.set('model', link);
+	if (model) page.searchParams.set('model', model);
+	if (pair) page.searchParams.set('pair', pair);
 	const launch = new URL('https://www.oculus.com/open_url/');
 	launch.searchParams.set('url', page.toString());
 	return launch.toString();

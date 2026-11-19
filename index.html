@@ -8,12 +8,13 @@
 	<!--
 		Content Security Policy: the page may only run its own scripts (plus the
 		import map below, pinned by its hash), show its own or in-memory images,
-		use its own font file, and download models over https. Nothing else: no
-		outside scripts, frames, fonts or plugins. If you edit the import map, update the hash
+		use its own font file, download models over https, and (only when "Send to
+		my Quest" pairs with a headset) talk to the pairing service in config.js.
+		Nothing else: no outside scripts, frames, fonts or plugins. If you edit the import map, update the hash
 		(npm test prints the right one). To enable the Dropbox Chooser, add
 		https://www.dropbox.com to script-src and frame-src (see README).
 	-->
-	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-hUvon5CVPXLquT3WJNr9I0hyTxeK5RACPxDkF4pZIVs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https: data: blob:; base-uri 'none'; form-action 'none'; object-src 'none'">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-hUvon5CVPXLquT3WJNr9I0hyTxeK5RACPxDkF4pZIVs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https: wss://0.peerjs.com data: blob:; base-uri 'none'; form-action 'none'; object-src 'none'">
 	<!-- Sites we download a model from are not told which page asked. -->
 	<meta name="referrer" content="no-referrer">
 	<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 15 16 5l12 10v12H4z' fill='%23d9822b'/%3E%3Cpath d='M13 27v-8h6v8' fill='%23fff'/%3E%3C/svg%3E">
@@ -80,6 +81,11 @@
 		.link-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
 		#status { color: var(--muted); font-size: 13.5px; min-height: 1.4em; overflow-wrap: anywhere; }
 		#status.error { color: var(--warn); }
+		#pair-box { border: 1.5px solid var(--accent); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+		#pair-box p { margin: 0; overflow-wrap: anywhere; }
+		.pair-actions { display: flex; gap: 8px; }
+		.pair-actions button { flex: 1; }
+		#send-note button.link-stop { min-height: 0; padding: 0; border: 0; color: var(--accent); text-decoration: underline; font-size: inherit; }
 		#recent-section { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
 		#recent { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; overflow-y: auto; min-height: 36px; }
 		#recent button { min-height: 36px; }
@@ -244,6 +250,14 @@
 			</div>
 			<button id="open-example" class="outline">Try the example home</button>
 			<div id="status" role="status"></div>
+			<!-- Headset: a computer is ready to send a model (Send to my Quest, ?pair=). -->
+			<div id="pair-box" hidden>
+				<p id="pair-text">Your computer is ready to send you a model.</p>
+				<div class="pair-actions">
+					<button id="pair-receive" class="primary">Receive</button>
+					<button id="pair-stop" class="outline" hidden>Unlink</button>
+				</div>
+			</div>
 			<section id="recent-section" hidden>
 				<h2>Recent</h2>
 				<ul id="recent"></ul>

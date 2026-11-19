@@ -11,6 +11,8 @@ import { XRExperience } from './xr.js';
 import { Lighting, TIMES } from './lighting.js';
 import { DepthShading } from './depth.js';
 import { checkLink, fileNameOf, sendToQuestUrl } from './links.js';
+import { isPairId } from './transfer.js';
+import { Sharer, Joiner } from './pairing.js';
 import { listRecents, getRecent, addRecent, removeRecent, getLastLink, setLastLink } from './storage.js';
 
 const $ = (id) => document.getElementById(id);
@@ -80,6 +82,8 @@ const xr = new XRExperience({ renderer, scene, camera, rig, anchor, centerer, li
 	lighting.fit();
 	frame('iso');
 	invalidate();
+	// A model that arrived from the computer while in VR opens now.
+	if (pendingModel) { const m = pendingModel; pendingModel = null; load(m.files, m.name, { type: 'sent' }).catch(() => {}); }
 } });
 
 // When the light changes (here or from the headset menu): remember it and update the views.
@@ -213,6 +217,9 @@ async function load(files, label, source = { type: 'file' }) {
 			: optimiseModel(result.root);
 		disposeCurrent();
 		current = { ...result, label, source, root: merged.group, layers: merged.layers, merged: merged.stats };
+		// On a computer, keep the opened files: Send to my Quest can pass them on.
+		currentFiles = ON_HEADSET ? null : files;
+		if (sharer?.linked) sharer.send(files, label); // linked to the headset: it gets this one too
 		centerer.add(current.root);
 		// Bottom-centre of the model (without the ground) at the origin.
 		const b = current.bounds;
@@ -443,7 +450,7 @@ async function renderRecents() {
 		const open = document.createElement('button');
 		open.className = 'recent-open';
 		const mb = (r.size / 1048576).toFixed(r.size < 10485760 ? 1 : 0);
-		const kind = { link: 'Link', dropbox: 'Dropbox', file: 'File' }[r.source.type] || 'File';
+		const kind = { link: 'Link', dropbox: 'Dropbox', file: 'File', sent: 'From computer' }[r.source.type] || 'File';
 		const span = (cls, text) => { const e = document.createElement('span'); e.className = cls; e.textContent = text; return e; };
 		open.title = `${r.name}: ${kind.toLowerCase()}, ${mb} MB, ${ago(r.date)}. Opens the saved copy.`;
 		open.append(span('recent-name', r.name), span('recent-meta', ago(r.date)));
@@ -491,16 +498,15 @@ function updateXRButtons() {
 		b.id = 'send-quest';
 		b.className = xrSupport.vr || xrSupport.ar ? 'outline' : 'xr';
 		b.textContent = 'Send to my Quest';
-		b.title = 'Opens this viewer on your headset through Meta\u2019s \u201cOpen in VR\u201d page, with the link you pasted. The link is passed to Meta to do this.';
+		b.title = 'Opens this viewer on your headset through Meta\u2019s \u201cOpen in VR\u201d page. A link is passed to Meta to do this; a file goes directly from this computer to the headset.';
 		b.addEventListener('click', sendToQuest);
 		const note = document.createElement('span');
 		note.className = 'hint';
 		note.id = 'send-note';
-		note.textContent = sendable().note;
 		return [b, note];
 	};
 	if (!xrSupport.vr && !xrSupport.ar) {
-		if (xrChecked && !ON_HEADSET) box.append(...send());
+		if (xrChecked && !ON_HEADSET) { box.append(...send()); renderSendNote(); }
 		else if (xrChecked) { const note = document.createElement('span'); note.className = 'hint'; note.textContent = 'This browser cannot enter VR.'; box.append(note); }
 		return;
 	}
@@ -525,35 +531,86 @@ function updateXRButtons() {
 		}
 	});
 	box.append(b);
-	if (!ON_HEADSET) box.append(...send()); // e.g. a PC with a headset attached: both ways in
+	if (!ON_HEADSET) { box.append(...send()); renderSendNote(); } // e.g. a PC with a headset attached: both ways in
 }
 
 /** True in a headset's own browser (Meta Quest Browser), where "Send to my Quest" and dropping files make no sense. */
 const ON_HEADSET = /OculusBrowser|\bQuest\b/i.test(navigator.userAgent);
 
+// ---------------------------------------------------------------------------
+// Send to my Quest (computers and phones) and Receive (headset)
+// ---------------------------------------------------------------------------
+
+let currentFiles = null; // the open model's files, on a computer (Send to my Quest passes them on)
+let sharer = null; // computer: the link to the headset (pairing.js), while there is one
+let sharerState = null; // its last { phase, text }
+let joiner = null; // headset: the link to the computer
+let pendingModel = null; // headset: a model received during VR, opened on leaving it
+
 /**
  * What "Send to my Quest" would send right now, and the line under the button
- * that says so. Only a link can travel to the headset (it is passed in the
- * page address), so:
- *   - a model opened from a link, from Recent with a link, or the example: its link
- *   - a model opened from a file on this computer: nothing can be sent (blocked: true)
+ * that says so:
+ *   - a model opened from a link, from Recent with a link, or the example: its
+ *     link, through Meta's Web Launch (nothing else involved)
+ *   - a model opened from a file on this computer: the file itself, directly
+ *     to the headset (Web Launch carries a pairing name; pairing.js)
  *   - no model open: the link in the link box, or just the viewer
  */
 function sendable() {
 	if (current) {
 		const name = `\u201c${current.label}\u201d`;
 		if (current.source?.url) return { link: current.source.url, note: `Sends ${name} to your headset: nothing to type there.` };
-		return { link: '', blocked: true, note: `${name} is a file on this computer, and only a link can be sent to the headset. Put the file in Dropbox and paste its link here.` };
+		if (currentFiles) return { files: currentFiles, note: `Sends ${name} straight to your headset. Keep this page open until it arrives.` };
 	}
 	const typed = $('link-input').value.trim();
 	return typed ? { link: typed, note: 'Sends the link you pasted to your headset: nothing to type there.' }
-		: { link: '', note: 'Opens this viewer on your headset. Open a model from a link first to send it too.' };
+		: { link: '', note: 'Opens this viewer on your headset. Open a model first to send it too.' };
 }
 
-/** Opens Meta's "Open in VR" page for this viewer, with the open model's link (or the pasted one). */
+/** The line under Send to my Quest: what it would send, or how the link is doing (with Unlink). */
+function renderSendNote() {
+	const note = $('send-note');
+	if (!note) return;
+	if (sharer?.active) {
+		const stop = document.createElement('button');
+		stop.className = 'link-stop';
+		stop.textContent = 'Unlink';
+		stop.addEventListener('click', () => { sharer.close(); });
+		note.replaceChildren(`${sharerState?.text ?? ''} `, stop);
+	} else {
+		note.textContent = sharerState && sharerState.phase !== 'linked' && sharerState.phase !== 'sending' && sharerState.phase !== 'waiting'
+			? `${sharerState.text} ${sendable().note}` : sendable().note;
+	}
+}
+
+/** Opens Meta's "Open in VR" page for this viewer, with the open model's link, or a link to send its file directly. */
 function sendToQuest() {
+	// Already linked (or waiting): send the open model again over the same link.
+	if (sharer?.active) {
+		if (current && currentFiles) sharer.send(currentFiles, current.label);
+		return;
+	}
 	const s = sendable();
-	if (s.blocked) { setStatus(s.note, true); return; }
+	if (s.files) {
+		const sh = new Sharer({ onState: (st) => { sharerState = st; renderSendNote(); if (st.phase === 'error') setStatus(st.text, true); } });
+		// (Opened straight away, inside the click: a tab opened later would be blocked.)
+		const url = sendToQuestUrl(location.href, { pair: sh.id });
+		if (url) {
+			window.open(url, '_blank', 'noopener,noreferrer');
+			setStatus('Meta\u2019s \u201cOpen in VR\u201d page opened in a new tab. Pick your headset there, then press Receive in the headset. Keep this page open.');
+		} else {
+			// A local test server (http): Web Launch needs https, so open this address on the other device by hand.
+			const local = new URL(location.href);
+			local.searchParams.delete('model');
+			local.searchParams.set('pair', sh.id);
+			window.__svr.pairUrl = local.toString();
+			setStatus(`Testing locally: open ${local} on the other device and press Receive there.`);
+		}
+		sharer = sh;
+		sh.open();
+		sh.send(s.files, current.label);
+		return;
+	}
 	if (s.link) {
 		const link = checkLink(s.link, location.href);
 		if (!link.ok) { setStatus(link.error, true); return; }
@@ -742,6 +799,43 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || new URLSe
 	}).catch((e) => console.warn('Offline support is not available', e));
 }
 
+// ?pair=<name>: this page was opened by Send to my Quest on a computer, which
+// is waiting to send a model directly. Nothing connects until Receive is
+// pressed: like a ?model= link from another site, it could have been put in
+// the address by anyone.
+{
+	const pair = new URLSearchParams(location.search).get('pair');
+	if (isPairId(pair)) {
+		setCollapsed(false);
+		$('pair-box').hidden = false;
+		$('pair-receive').addEventListener('click', () => {
+			$('pair-receive').hidden = true;
+			$('pair-stop').hidden = false;
+			// Out of the address bar, so a reload or a bookmark does not try again.
+			const clean = new URL(location.href);
+			clean.searchParams.delete('pair');
+			history.replaceState(null, '', clean);
+			joiner = new Joiner({
+				maxBytes: CONFIG.maxDownloadMB * 1048576,
+				onState: ({ phase, text }) => {
+					$('pair-text').textContent = text;
+					if (phase === 'closed' || phase === 'error') $('pair-stop').hidden = true;
+				},
+				onModel: (files, name) => {
+					if (renderer.xr.isPresenting) {
+						pendingModel = { files, name };
+						$('pair-text').textContent = `Received \u201c${name}\u201d: it opens when you leave VR.`;
+						return;
+					}
+					load(files, name, { type: 'sent' }).catch(() => {});
+				},
+			});
+			joiner.join(pair);
+		});
+		$('pair-stop').addEventListener('click', () => joiner?.close());
+	}
+}
+
 // ?model=<url> opens a model straight away (also used by the screenshot tests).
 const params = new URLSearchParams(location.search);
 const initial = params.get('model');
@@ -766,6 +860,8 @@ if (initial) {
 // Test hooks for scripts/screenshots.js
 window.__svr = {
 	lighting,
+	get sharer() { return sharer; },
+	get joiner() { return joiner; },
 	depth,
 	ready,
 	invalidate,

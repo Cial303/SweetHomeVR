@@ -22,7 +22,12 @@ It runs in the Meta Quest Browser: no app store, no developer mode, no sideloadi
 4. Drag to orbit, scroll or pinch to zoom, right-drag to pan.
 5. Next time, tap the model under **Recent**: the last 5 models are kept in the browser, so reopening one needs no download. For a model opened from a link, **↻** downloads the latest version from the same link (handy after editing the home on the Mac). The last link you used is also remembered in the link box.
 
-**No typing in the headset:** on a computer or phone, open the model from its link (or paste the link) and press **Send to my Quest**. Meta's "Open in VR" page opens (you need to be signed in to your Meta account, with the headset on and online); pick your headset, and the viewer opens there with that model's link already filled in. Press **Load**. The line under the button always says what will be sent. Only a link can travel this way: a model opened from a file on the computer cannot be sent, so put the file in Dropbox and use its link.
+**No typing in the headset:** open the model on a computer (a file, a dropped file or a link) and press **Send to my Quest**. Meta's "Open in VR" page opens (you need to be signed in to your Meta account, with the headset on and online); pick your headset, and the viewer opens there.
+
+- **A model from a link** (Dropbox, the example): the link arrives filled in; press **Load**.
+- **A file from the computer**: press **Receive** in the headset. The file goes straight from the computer to the headset, and while the computer's page stays open, every model you open on it goes to the headset too. **Unlink** on either side ends it. A model that arrives while you are in VR opens when you leave it.
+
+The line under the button always says what will be sent.
 
 **Tip for Dropbox links:** a Dropbox shared link stays the same when you overwrite the file with the same name. Save your home under a fixed name (e.g. `My home.sh3d`), share it once, and on the Quest you only ever type that link once; after that use **↻**.
 
@@ -97,7 +102,8 @@ Without a key the button is simply hidden. The Chooser script is the only file l
 
 - **Your home stays on your device.** Models are read in the browser. Nothing is uploaded, and there is no analytics or tracking. Recent models are kept in the browser's own storage (IndexedDB) on that device; remove them with the × beside each one.
 - **Opening a model cannot contact other websites.** A model file can contain links to images on other servers. They are never followed (the status line says how many were ignored), so a file cannot be used to see who opens it.
-- **Send to my Quest.** This uses Meta's [Web Launch](https://developers.meta.com/horizon/documentation/web/web-launch/): the viewer's address, with the link you pasted, is handed to Meta's page so it can open on your headset. Nothing is sent unless you press the button.
+- **Send to my Quest.** This uses Meta's [Web Launch](https://developers.meta.com/horizon/documentation/web/web-launch/): the viewer's address is handed to Meta's page so it can open on your headset, with the model's link or, for a file, a random one-time pairing name. Nothing is sent unless you press the button.
+- **Sending a file to the headset.** The two devices are introduced by [PeerJS](https://peerjs.com/)'s free public server (set in `config.js`), which sees only the pairing name and connection details. The file then goes directly between them over an encrypted WebRTC connection; if your network blocks a direct path, PeerJS's relay passes the encrypted bytes along without being able to read them. The headset connects only after you press **Receive**, accepts at most 500 MB, and opens what arrives with the same checks as any file. The pairing name works once, for 10 minutes. The page contacts PeerJS only when you use this.
 - **Links.** Only `https://` links are downloaded, up to 500 MB, without cookies or a referrer. A `?model=` address that points to another site is not opened automatically: it is put in the link box and waits for you to press **Load**.
 - **Oversized files.** Archives that would unpack to more than 1 GB or 50,000 files are refused before unpacking, and textures above 2048 pixels are shrunk to fit a Quest 2's memory. The limits are in `config.js` and `js/formats.js`.
 - **The page only runs its own code.** A Content Security Policy in `index.html` allows scripts from this site only, with the import map pinned by its hash. All libraries are vendored; nothing loads from a CDN. If you edit the import map, `npm test` tells you the new hash.
@@ -163,12 +169,14 @@ js/lighting.js    time of day (sun from the home's compass) and shadows
 js/depth.js       depth shading for the headset: corner gradients baked per vertex
 js/optimise.js    merge geometry by material, BVH for raycasts
 js/storage.js     recent models (IndexedDB)
-js/links.js       which links may be downloaded; Dropbox link rewrite (no DOM)
+js/links.js       which links may be downloaded; Dropbox link rewrite; Send to my Quest address (no DOM)
+js/transfer.js    sending a file to the headset: the protocol and its checks (no DOM)
+js/pairing.js     the direct computer-to-headset link (PeerJS)
 js/sh3d.js        SH3D parser and scene builder (no DOM; Node-testable)
 js/formats.js     zip / OBJ / GLB / DAE / 3DS loading, unit detection
 sw.js             service worker: offline use, and no mix of old and new files after an update
 examples/         the generated example home (original content, made by scripts/make-example.js)
-vendor/           three.js, three-mesh-bvh, fflate and the Kalam font (with licences)
+vendor/           three.js, three-mesh-bvh, fflate, PeerJS and the Kalam font (with licences)
 scripts/          vendoring, fixtures, example home, local server, screenshots, emulated headset test
 tests/            Node tests
 docs/             pictures for this README
@@ -182,5 +190,6 @@ Change the versions in `package.json`, then `npm install && npm run vendor`, run
 
 - This project: MIT licence (see [LICENSE](LICENSE)).
 - [three.js](https://threejs.org/) (MIT), [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh) (MIT), [fflate](https://github.com/101arrowz/fflate) (MIT).
+- [PeerJS](https://peerjs.com/) (MIT) for the computer-to-headset link.
 - The handwriting on the welcome notes is [Kalam](https://fonts.google.com/specimen/Kalam) by Indian Type Foundry (SIL Open Font Licence 1.1; licence in `vendor/kalam/`).
 - Sweet Home 3D by Emmanuel Puybaret / Space Mushrooms. This project reads its file format; it contains no Sweet Home 3D code.

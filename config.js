@@ -15,6 +15,14 @@ export const CONFIG = {
 	// loading: a few 4K images are enough to exhaust a Quest 2's memory.
 	maxTextureSize: 2048,
 
+	// Send to my Quest, for a model opened from a file on this computer: the
+	// service that introduces the computer and the headset to each other
+	// (js/pairing.js). Only connection details pass through it; the model goes
+	// directly between the two devices, encrypted. The default is PeerJS's free
+	// public server (https://peerjs.com/server/cloud). To use your own
+	// PeerServer, change it here and in connect-src in index.html.
+	pairing: { host: '0.peerjs.com', port: 443, path: '/', secure: true, key: 'peerjs' },
+
 	// Default unit for OBJ files without a unit override ('auto' | 'cm' | 'm' | 'mm' | 'in').
 	defaultObjUnits: 'auto',
 };

@@ -62,7 +62,13 @@ copy(path.join(nm, 'fflate/LICENSE'), path.join(vendor, 'fflate/LICENSE'));
 for (const weight of [400, 700]) copy(path.join(nm, `@fontsource/kalam/files/kalam-latin-${weight}-normal.woff2`), path.join(vendor, `kalam/kalam-latin-${weight}.woff2`));
 copy(path.join(nm, '@fontsource/kalam/LICENSE'), path.join(vendor, 'kalam/LICENSE'));
 
-const versions = Object.fromEntries(['three', 'three-mesh-bvh', 'fflate', '@fontsource/kalam'].map(
+// PeerJS (MIT): the direct link between a computer and a headset for Send to
+// my Quest (js/pairing.js). Its browser build defines window.peerjs; the page
+// loads it only when that feature is used.
+copy(path.join(nm, 'peerjs/dist/peerjs.min.js'), path.join(vendor, 'peerjs/peerjs.min.js'));
+copy(path.join(nm, 'peerjs/LICENSE'), path.join(vendor, 'peerjs/LICENSE'));
+
+const versions = Object.fromEntries(['three', 'three-mesh-bvh', 'fflate', '@fontsource/kalam', 'peerjs'].map(
 	(p) => [p, JSON.parse(fs.readFileSync(path.join(nm, p, 'package.json'), 'utf8')).version]));
 fs.writeFileSync(path.join(vendor, 'VERSIONS.json'), JSON.stringify(versions, null, 2) + '\n');
 console.log('Vendored', versions, `(${seen.size} three.js addon files)`);
