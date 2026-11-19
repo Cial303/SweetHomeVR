@@ -57,6 +57,10 @@ const WALK_SPEED = 0.75; // m/s at full stick
 const STEP = 0.6; // floor following: look this far above and below the feet
 const FADE_OUT = 0.1, FADE_IN = 0.15; // teleport fade, seconds
 const MENU_DISTANCE = 0.65, MENU_DROP = 0.1, MENU_LEFT = 0.1; // summoned menu, relative to the eyes (controls card to its left)
+// In the dollhouse the menu opens off to the left and further away, so it
+// never sits between you and the model (it used to appear right in front of
+// the face on entry), and you can watch the model while changing a setting.
+const MENU_DOLL_DISTANCE = 0.95, MENU_DOLL_SIDE = THREE.MathUtils.degToRad(34);
 const TURNS = [15, 30, 45]; // snap turn options, degrees
 const HEIGHTS = [0, 1.4, 1.7, 2.0]; // person height options, metres (0 = your own)
 const EYE_BELOW_TOP = 0.11; // eyes are about this far below the top of the head
@@ -519,16 +523,22 @@ export class XRExperience {
 		this.menus.dollhouse.setLabel('figure', `Figure: ${this.figureOn ? 'on' : 'off'}`);
 	}
 
-	/** Opens this mode's menu in front of the head (yaw only, facing the eyes), a little to the left, with the controls card further left. */
+	/**
+	 * Opens this mode's menu facing the eyes (yaw only), with the controls card
+	 * on its left: walking, in front of the head and a little to the left; in
+	 * the dollhouse, well to the left and further away, clear of the model.
+	 */
 	openMenu(headMatrix = this.camera.matrix) {
 		this.closeMenu();
 		const panel = this.menus[this.mode];
 		if (!panel) return;
 		const head = new THREE.Vector3().setFromMatrixPosition(headMatrix);
 		const yaw = yawOf(headMatrix);
-		const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+		const doll = this.mode === 'dollhouse';
+		const towards = yaw + (doll ? MENU_DOLL_SIDE : 0); // (a positive angle turns left)
+		const dir = new THREE.Vector3(-Math.sin(towards), 0, -Math.cos(towards));
 		const left = new THREE.Vector3(-Math.cos(yaw), 0, Math.sin(yaw));
-		panel.mesh.position.copy(head).addScaledVector(fwd, MENU_DISTANCE).addScaledVector(left, MENU_LEFT);
+		panel.mesh.position.copy(head).addScaledVector(dir, doll ? MENU_DOLL_DISTANCE : MENU_DISTANCE).addScaledVector(left, doll ? 0 : MENU_LEFT);
 		panel.mesh.position.y -= MENU_DROP;
 		this.rig.updateMatrixWorld(true);
 		panel.mesh.lookAt(this.rig.localToWorld(head.clone().setY(panel.mesh.position.y)));

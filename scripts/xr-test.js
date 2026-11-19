@@ -155,6 +155,19 @@ check('an orb on each hand', s.orbs === 2);
 }
 check('scale figure stands by the dollhouse at the model\'s scale', s.figure && Math.abs(s.figureHeight - 1.75 * s.anchorScale) < 1e-3, `figure ${s.figureHeight.toFixed(3)} m, scale ${s.anchorScale.toFixed(3)}`);
 check('menu opens once on entry', s.menu === 'dollhouse');
+{
+	// The dollhouse menu opens to the left of where you look, out of the model's way.
+	const m = await page.evaluate(() => {
+		const x = window.__svr.xr, V = x.rig.position.constructor;
+		const head = x.headWorld(), menu = x.menu.mesh.getWorldPosition(new V());
+		const fwd = new V(0, 0, -1).transformDirection(x.camera.matrixWorld).setY(0).normalize();
+		const to = menu.clone().sub(head).setY(0);
+		const angle = Math.atan2(fwd.clone().cross(to.clone().normalize()).y, fwd.dot(to.clone().normalize())) * 180 / Math.PI; // + = left
+		const model = x.anchor.getWorldPosition(new V()).sub(head).setY(0);
+		return { angle: +angle.toFixed(1), distance: +to.length().toFixed(2), modelDistance: +model.length().toFixed(2) };
+	});
+	check('dollhouse menu opens on the left, away from the face', m.angle > 28 && m.angle < 40 && m.distance > 0.9, JSON.stringify(m));
+}
 await shot('dollhouse-menu');
 await click('right', 'b-button');
 check('B closes the menu', (await state()).menu === null);

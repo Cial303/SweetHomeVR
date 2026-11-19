@@ -22,7 +22,7 @@ It runs in the Meta Quest Browser: no app store, no developer mode, no sideloadi
 4. Drag to orbit, scroll or pinch to zoom, right-drag to pan.
 5. Next time, tap the model under **Recent**: the last 5 models are kept in the browser, so reopening one needs no download. For a model opened from a link, **↻** downloads the latest version from the same link (handy after editing the home on the Mac). The last link you used is also remembered in the link box.
 
-**No typing in the headset:** on a computer or phone, paste the model's link into the page and press **Send to my Quest**. Meta's "Open in VR" page opens (you need to be signed in to your Meta account, with the headset on and online); pick your headset, and the viewer opens there with the link already filled in. Press **Load**. Without a link it simply opens the viewer on the headset. A file picked or dropped on the computer cannot be sent this way: put it in Dropbox and use its link.
+**No typing in the headset:** on a computer or phone, open the model from its link (or paste the link) and press **Send to my Quest**. Meta's "Open in VR" page opens (you need to be signed in to your Meta account, with the headset on and online); pick your headset, and the viewer opens there with that model's link already filled in. Press **Load**. The line under the button always says what will be sent. Only a link can travel this way: a model opened from a file on the computer cannot be sent, so put the file in Dropbox and use its link.
 
 **Tip for Dropbox links:** a Dropbox shared link stays the same when you overwrite the file with the same name. Save your home under a fixed name (e.g. `My home.sh3d`), share it once, and on the Quest you only ever type that link once; after that use **↻**.
 
@@ -43,7 +43,7 @@ Supported files:
 
 Press **Enter VR** once a model is open. In the headset, the menu switches between VR and passthrough.
 
-**Menu:** a glowing orb floats over each hand. Point at one with the other hand and pull the trigger, touch it with the other controller, or press **A** or **X**: the menu opens in front of you, with a drawing of the controllers and what each button does. **B** / **Y** or a click elsewhere closes it. It opens by itself the first time.
+**Menu:** a glowing orb floats over each hand. Point at one with the other hand and pull the trigger, touch it with the other controller, or press **A** or **X**: the menu opens with a drawing of the controllers and what each button does. In the dollhouse it opens to your left, clear of the model; while walking, in front of you. **B** / **Y** or a click elsewhere closes it. It opens by itself the first time.
 
 **Dollhouse**
 - The home stands on a low museum plinth in a gallery room. You look down at it as a 2 m tall person would, whether you sit or stand, so it's easy to look into the rooms. If you change position, **Recentre** measures your height again.

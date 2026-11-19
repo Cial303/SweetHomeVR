@@ -192,7 +192,7 @@ function disposeCurrent() {
 
 /**
  * Loads [{ name, bytes }] and shows it.
- * source: { type: 'link', url } | { type: 'file' } | { type: 'recent' } (not re-saved)
+ * source: { type: 'link', url } | { type: 'file' } | { type: 'recent', url? } (not re-saved; url = the link it first came from)
  */
 async function load(files, label, source = { type: 'file' }) {
 	// If another model is opened before this one finishes, this one is dropped.
@@ -212,7 +212,7 @@ async function load(files, label, source = { type: 'file' }) {
 			? { group: result.root, layers: Object.fromEntries(['main', 'walls', 'floors', 'ceilings', 'ground'].map((n) => [n, result.root.getObjectByName(n === 'main' ? 'furniture' : n) || new THREE.Group()])), stats: null }
 			: optimiseModel(result.root);
 		disposeCurrent();
-		current = { ...result, label, root: merged.group, layers: merged.layers, merged: merged.stats };
+		current = { ...result, label, source, root: merged.group, layers: merged.layers, merged: merged.stats };
 		centerer.add(current.root);
 		// Bottom-centre of the model (without the ground) at the origin.
 		const b = current.bounds;
@@ -450,7 +450,7 @@ async function renderRecents() {
 		open.addEventListener('click', async () => {
 			const rec = await getRecent(r.id);
 			if (!rec) { setStatus('That saved copy is no longer available.', true); renderRecents(); return; }
-			load(rec.files, rec.name, { type: 'recent' }).catch(() => {});
+			load(rec.files, rec.name, { type: 'recent', url: rec.source.url }).catch(() => {});
 		});
 		li.append(open);
 		if (r.source.type === 'link') {
@@ -495,7 +495,8 @@ function updateXRButtons() {
 		b.addEventListener('click', sendToQuest);
 		const note = document.createElement('span');
 		note.className = 'hint';
-		note.textContent = 'Opens this viewer on your headset, with the link you pasted: nothing to type there.';
+		note.id = 'send-note';
+		note.textContent = sendable().note;
 		return [b, note];
 	};
 	if (!xrSupport.vr && !xrSupport.ar) {
@@ -530,19 +531,39 @@ function updateXRButtons() {
 /** True in a headset's own browser (Meta Quest Browser), where "Send to my Quest" and dropping files make no sense. */
 const ON_HEADSET = /OculusBrowser|\bQuest\b/i.test(navigator.userAgent);
 
-/** Opens Meta's "Open in VR" page for this viewer, with the pasted link if there is one. */
-function sendToQuest() {
+/**
+ * What "Send to my Quest" would send right now, and the line under the button
+ * that says so. Only a link can travel to the headset (it is passed in the
+ * page address), so:
+ *   - a model opened from a link, from Recent with a link, or the example: its link
+ *   - a model opened from a file on this computer: nothing can be sent (blocked: true)
+ *   - no model open: the link in the link box, or just the viewer
+ */
+function sendable() {
+	if (current) {
+		const name = `\u201c${current.label}\u201d`;
+		if (current.source?.url) return { link: current.source.url, note: `Sends ${name} to your headset: nothing to type there.` };
+		return { link: '', blocked: true, note: `${name} is a file on this computer, and only a link can be sent to the headset. Put the file in Dropbox and paste its link here.` };
+	}
 	const typed = $('link-input').value.trim();
-	if (typed) {
-		const link = checkLink(typed, location.href);
+	return typed ? { link: typed, note: 'Sends the link you pasted to your headset: nothing to type there.' }
+		: { link: '', note: 'Opens this viewer on your headset. Open a model from a link first to send it too.' };
+}
+
+/** Opens Meta's "Open in VR" page for this viewer, with the open model's link (or the pasted one). */
+function sendToQuest() {
+	const s = sendable();
+	if (s.blocked) { setStatus(s.note, true); return; }
+	if (s.link) {
+		const link = checkLink(s.link, location.href);
 		if (!link.ok) { setStatus(link.error, true); return; }
 	}
-	const url = sendToQuestUrl(location.href, typed);
+	const url = sendToQuestUrl(location.href, s.link);
 	if (!url) { setStatus('Send to my Quest only works from the https address of this page, not from a local test server.', true); return; }
 	window.open(url, '_blank', 'noopener,noreferrer');
-	setStatus(typed
-		? 'Meta\u2019s \u201cOpen in VR\u201d page opened in a new tab. Pick your headset there: the viewer opens on it with your link filled in. Then press Load.'
-		: 'Meta\u2019s \u201cOpen in VR\u201d page opened in a new tab. Pick your headset there to open the viewer on it. To send a model as well, paste its link first: a file picked on this computer cannot be sent.');
+	setStatus(s.link
+		? 'Meta\u2019s \u201cOpen in VR\u201d page opened in a new tab. Pick your headset there: the viewer opens on it with the model\u2019s link ready. If it does not load by itself, press Load.'
+		: 'Meta\u2019s \u201cOpen in VR\u201d page opened in a new tab. Pick your headset there to open the viewer on it.');
 }
 
 XRExperience.supported().then((s) => { xrSupport = s; xrChecked = true; updateXRButtons(); });
@@ -580,6 +601,7 @@ $('time').addEventListener('click', (e) => { const v = e.target.closest('button'
 $('shadows').addEventListener('change', (e) => lighting.setShadows(e.target.checked));
 $('depth').addEventListener('change', (e) => depth.setEnabled(e.target.checked));
 $('link-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('open-link').click(); });
+$('link-input').addEventListener('input', () => { const n = $('send-note'); if (n) n.textContent = sendable().note; });
 $('units').value = CONFIG.defaultObjUnits;
 $('link-input').value = getLastLink();
 renderRecents();
