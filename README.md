@@ -99,7 +99,7 @@ The menu is a list of settings: **switches** for what is on or off (Shadows, Dep
 - **Right stick** left/right turns in steps (15°, 30° or 45°, set in the menu).
 - **Right stick forward**, or **hold a trigger**, and aim: a blue ring shows where you'll land (red on a wall). Let go to jump there.
 - **B** or **Y** goes back to the dollhouse.
-- Menu: **Back to the dollhouse**, **Time of day**, **Shadows**, **Depth**, **Ceilings**, **Solid walls**, **See-through**, **Turn**, **Height** (yours, 1.4, 1.7 or 2.0 m), **View**, **Exit VR**.
+- Menu: **Time of day**, **Shadows**, **Depth**, **Ceilings**, **Solid walls**, **See-through**, **Turn**, **Height** (yours, 1.4, 1.7 or 2.0 m), **View**, and at the bottom **Back to the dollhouse** next to **Exit VR**.
 
 **See-through** (headset only, both menus): a slider that fades walls and furniture, up to a glass house where only 15% of them is left, so you can see into every room at once. Floors and ceilings stay as they are. Faded walls and furniture cast no shadows, like glass. The 2D page always shows the home as modelled.
 

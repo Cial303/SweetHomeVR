@@ -250,7 +250,6 @@ export class XRExperience {
 				exit,
 			], opts('Dollhouse')),
 			walk: new Panel([
-				[{ id: 'dollhouse', label: 'Back to the dollhouse' }],
 				light,
 				[sw('shadows', 'Shadows'), sw('depth', 'Depth')],
 				[sw('ceilings', 'Ceilings'), sw('solid', 'Solid walls')],
@@ -258,7 +257,8 @@ export class XRExperience {
 				[{ type: 'choice', id: 'turn', label: 'Turn', options: TURNS.map((t) => ({ value: t, label: `${t}°` })), value: 30 }],
 				[{ type: 'choice', id: 'height', label: 'Height', options: HEIGHTS.map((h) => ({ value: h, label: h ? `${h.toFixed(1)} m` : 'Yours' })), value: 0 }],
 				view,
-				exit,
+				// The two ways out, side by side at the bottom (at the user's request).
+				[{ id: 'dollhouse', label: 'Back to the dollhouse' }, ...exit],
 			], opts('Walking')),
 		};
 		const either = (btn) => [

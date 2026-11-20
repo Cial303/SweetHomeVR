@@ -163,7 +163,7 @@ A model file and a pasted link are untrusted input: the viewer will be shared, a
   - Models without rooms (OBJ, GLB): anything except walls.
 - Person height: menu option Yours / 1.4 / 1.7 / 2.0 m (remembered). For a set height the rig is raised or lowered so the eyes are 11 cm below that height, measured when you enter walk mode or change the option.
 - **B or Y:** back to dollhouse (or closes the menu if it is open).
-- **A or X** (or an orb): toggle a menu 0.75 m in front of the head (same design as the dollhouse menu) with **Back to the dollhouse**, Time of day, Shadows and Depth, Ceilings and Solid walls, See-through, Turn (15° / 30° / 45°), Height (Yours / 1.4 / 1.7 / 2.0 m), View, and Exit VR. Lasers are hidden while walking, except while the menu is open or a laser points at an orb.
+- **A or X** (or an orb): toggle a menu 0.75 m in front of the head (same design as the dollhouse menu) with Time of day, Shadows and Depth, Ceilings and Solid walls, See-through, Turn (15° / 30° / 45°), Height (Yours / 1.4 / 1.7 / 2.0 m), View, and at the bottom the two ways out side by side (at the user's request), **Back to the dollhouse** (white) and **Exit VR** (orange), on the tall bottom row. Lasers are hidden while walking, except while the menu is open or a laser points at an orb.
 
 ## Project layout
 
