@@ -1,8 +1,8 @@
 // Scripted VR session in headless Chromium using Meta's WebXR emulator (IWER):
 // enter VR, point at the model, rotate/zoom, grab, orbs (point and touch) and
 // menu, VR/passthrough switch, jump in at 1:1, walk, snap turn, teleport,
-// pull with the trigger, turn and height options, exit, and re-enter from
-// another spot. Screenshots go to test-output/xr-*.png.
+// pull with the trigger, turn and height options, solid walls, see-through,
+// exit, and re-enter from another spot. Screenshots go to test-output/xr-*.png.
 //   npm run xr-test             (uses the first private fixture, else userGuideExample)
 //   npm run xr-test -- tests/fixtures/SweetHome3DExample.sh3d
 
@@ -74,16 +74,23 @@ const state = () => page.evaluate(() => {
 		stage: [...x.stage.position.toArray(), x.stage.rotation.y],
 		figure: x.figure.visible, figureHeight: x.figure.visible ? new (x.rig.position.constructor)().setFromMatrixScale(x.figure.matrixWorld).y * 1.75 : 0 };
 });
-/** World position of a button's centre on the open menu. */
-const menuPoint = (id) => page.evaluate(async (id) => {
+/**
+ * World position of a target on the open menu: a button or switch (id), a
+ * choice's option (id, value) or a point along a slider (id, 0..1).
+ */
+const menuPoint = (id, value) => page.evaluate(async ({ id, value }) => {
 	const THREE = await import('three');
 	const p = window.__svr.xr.menu;
-	const r = p.rects().find((b) => b.id === id);
-	const u = (r.x + r.w / 2) / p.size.w, v = 1 - (r.y + r.h / 2) / p.size.h;
+	const r = p.rects().find((b) => b.id === id && (b.slider || value === undefined || b.value === value));
+	if (!r) throw new Error(`no menu target ${id} ${value ?? ''}`);
+	const x = r.slider ? r.track.x + r.track.w * (value ?? 0) : r.x + r.w / 2;
+	const u = x / p.size.w, v = 1 - (r.y + r.h / 2) / p.size.h;
 	const g = p.mesh.geometry.parameters;
 	p.mesh.updateMatrixWorld(true);
 	return p.mesh.localToWorld(new THREE.Vector3((u - 0.5) * g.width, (v - 0.5) * g.height, 0)).toArray();
-}, id);
+}, { id, value });
+/** A menu cell's current state: { value, label, disabled, note }. */
+const cell = (menu, id) => page.evaluate(({ menu, id }) => { const c = window.__svr.xr.menus[menu].get(id); return { value: c.value, label: c.label, disabled: !!c.disabled, note: c.note ?? null }; }, { menu, id });
 /** World position of the orb on a hand ('left' or 'right'). */
 const orbPoint = (hand) => page.evaluate(async (hand) => {
 	const THREE = await import('three');
@@ -99,7 +106,7 @@ const lookAhead = () => page.evaluate(() => window.__device.quaternion.set(0, 0,
 const R = [0.25, 1.1, -0.25], L = [-0.25, 1.0, -0.2];
 const restRight = () => aim('right', R, [0.6, 1.1, -1.5]); // pointing at nothing
 const restLeft = () => aim('left', L, [-0.6, 1.0, -1.5]);
-const clickMenu = async (id) => { await aimW('right', R, await menuPoint(id)); await frames(5); await click('right', 'trigger'); };
+const clickMenu = async (id, value) => { await aimW('right', R, await menuPoint(id, value)); await frames(5); await click('right', 'trigger'); };
 /** World point on top of the model (plinth centre, slightly forward). */
 const modelTop = () => page.evaluate(() => { const x = window.__svr.xr; return x.stage.localToWorld(x.doll.pos.clone().add(new (x.doll.pos.constructor)(0.05, 0.02, 0.25))).toArray(); });
 
@@ -167,6 +174,16 @@ check('menu opens once on entry', s.menu === 'dollhouse');
 		return { angle: +angle.toFixed(1), distance: +to.length().toFixed(2), modelDistance: +model.length().toFixed(2) };
 	});
 	check('dollhouse menu opens on the left, away from the face', m.angle > 28 && m.angle < 40 && m.distance > 0.9, JSON.stringify(m));
+	// The menu: switches for on/off, choices with every option shown, a slider, buttons; not too tall.
+	const kinds = await page.evaluate(() => {
+		const x = window.__svr.xr, kinds = (p) => Object.fromEntries([...p.cells.values()].map((c) => [c.id, c.type]));
+		const g = (p) => p.mesh.geometry.parameters;
+		return { doll: kinds(x.menus.dollhouse), walk: kinds(x.menus.walk), heights: Object.values(x.menus).map((p) => +g(p).height.toFixed(2)), width: g(x.menus.walk).width };
+	});
+	const want = { shadows: 'switch', depth: 'switch', ceilings: 'switch', light: 'choice', view: 'choice', seethrough: 'slider', exit: 'button' };
+	const ok = Object.entries(want).every(([id, t]) => kinds.doll[id] === t && kinds.walk[id] === t)
+		&& kinds.doll.figure === 'switch' && kinds.doll.levels === 'choice' && kinds.walk.solid === 'switch' && kinds.walk.turn === 'choice' && kinds.walk.height === 'choice';
+	check('menus use switches, choices, a slider and buttons, and fit in view', ok && Math.max(...kinds.heights) < 0.7, JSON.stringify({ heights: kinds.heights, width: kinds.width }));
 }
 await shot('dollhouse-menu');
 await click('right', 'b-button');
@@ -227,7 +244,7 @@ await shot('menu-and-controls');
 // Menu: Recentre puts the model back, Ceilings toggles, View switches to passthrough.
 await aimW('right', R, await menuPoint('recentre')); await frames(5);
 s = await state();
-check('laser hovers the menu', s.hover === 'recentre', `hover=${s.hover}`);
+check('laser hovers the menu', s.hover?.startsWith('recentre|'), `hover=${s.hover}`);
 await click('right', 'trigger');
 s = await state();
 check('Recentre resets the model', Math.abs(s.pos[0]) < 1e-6 && Math.abs(s.yaw) < 1e-6 && s.zoom === 1 && s.menu === null);
@@ -236,27 +253,48 @@ check('A opens the menu', (await state()).menu === 'dollhouse');
 const c0 = (await state()).ceilings;
 await clickMenu('ceilings');
 s = await state();
-check('Ceilings toggles and the menu stays open', s.ceilings === !c0 && s.menu === 'dollhouse');
+check('Ceilings toggles and the menu stays open', s.ceilings === !c0 && s.menu === 'dollhouse' && (await cell('dollhouse', 'ceilings')).value === !c0);
 await clickMenu('ceilings'); // back on
 
-// Light and shadows.
+// Light: pick an option; shadows: a switch.
 const t0 = await page.evaluate(() => window.__svr.lighting.time);
-await clickMenu('light');
+const pick = t0 === 'sunset' ? 'noon' : 'sunset';
+await clickMenu('light', pick);
 const t1 = await page.evaluate(() => window.__svr.lighting.time);
-check('Light changes the time of day', t1 !== t0, `${t0} -> ${t1}`);
-for (let i = 0; i < 3; i++) await clickMenu('light'); // round to where it was
+check('Time of day: one click picks an option', t1 === pick && (await cell('dollhouse', 'light')).value === pick, `${t0} -> ${t1}`);
+await shot('dollhouse-menu-sunset');
+await clickMenu('light', t0);
 await clickMenu('shadows');
 s = await page.evaluate(() => ({ on: window.__svr.lighting.shadows, map: window.__svr.renderer.shadowMap.enabled, time: window.__svr.lighting.time }));
-check('Shadows turn on', s.on && s.map && s.time === t0, JSON.stringify(s));
+check('Shadows switch turns them on', s.on && s.map && s.time === t0 && (await cell('dollhouse', 'shadows')).value === true, JSON.stringify(s));
+
+// See-through: press on the slider, drag, let go; walls and furniture fade, floors don't.
+const glass = () => page.evaluate(() => {
+	const x = window.__svr.xr, op = (layer) => x.model.layers[layer].children.map((m) => [].concat(m.material)[0]).filter((m) => m.userData.svrBase && !m.userData.svrBase.transparent);
+	const wall = op('walls')[0], piece = op('main')[0], floor = x.model.layers.floors.children[0]?.material;
+	return { amount: x.seeThroughAmount, wall: wall?.opacity, wallDepthWrite: wall?.depthWrite, piece: piece?.opacity, floor: floor?.opacity, floorTransparent: floor?.transparent, cast: x.model.layers.walls.children.some((m) => m.castShadow) };
+});
+await aimW('right', R, await menuPoint('seethrough', 0.1)); await frames(4);
+await button('right', 'trigger', 1); await frames(4);
+for (const f of [0.3, 0.5, 0.7]) { await aimW('right', R, await menuPoint('seethrough', f)); await frames(3); }
+let g = await glass();
+await button('right', 'trigger', 0); await frames(4);
+const fade = 1 - 0.85 * g.amount;
+check('See-through: dragging the slider fades walls and furniture', Math.abs(g.amount - 0.7) < 0.051 && Math.abs(g.wall - fade) < 1e-6 && Math.abs(g.piece - fade) < 1e-6 && !g.wallDepthWrite && !g.cast && g.floor === 1 && !g.floorTransparent && (await state()).menu === 'dollhouse', JSON.stringify(g));
+await restRight(); await frames(5);
+await shot('dollhouse-see-through');
+await clickMenu('seethrough', 0); // a click at the start of the track: off
+g = await glass();
+check('See-through back to Off restores the model', g.amount === 0 && g.wall === 1 && g.piece === 1 && g.wallDepthWrite && g.cast && (await cell('dollhouse', 'seethrough')).value === 0, JSON.stringify(g));
 await restRight(); await frames(5);
 await shot('dollhouse-shadows');
 s = await state();
 if (s.session === 'ar') {
-	await clickMenu('view');
+	await clickMenu('view', 'ar');
 	s = await state();
 	check('View switches to passthrough', s.view === 'ar' && !s.showroom && Math.abs(s.rig[1]) < 1e-6);
 	await shot('passthrough');
-	await clickMenu('view');
+	await clickMenu('view', 'vr');
 	s = await state();
 	check('View switches back to VR', s.view === 'vr' && s.showroom && Math.abs(s.rig[1] - 0.29) < 0.005);
 } else {
@@ -400,22 +438,70 @@ s = await state();
 const turned = THREE_deg(ry0 - s.rigYaw);
 check(`right stick snap-turns ${s.snap}°`, Math.abs(turned - s.snap) < 0.5 && Math.hypot(s.head[0] - h0[0], s.head[2] - h0[2]) < 1e-3, `${turned.toFixed(1)}°`);
 
-// Walk-mode menu: Turn cycles 15/30/45, Height changes the eye level, Dollhouse goes back.
+// Walk-mode menu: Turn and Height are choices, Dollhouse goes back.
 await click('right', 'a-button');
 s = await state();
 check('A opens the walk menu', s.menu === 'walk');
 await shot('walk-menu');
-const turns = [];
-for (let i = 0; i < 3; i++) { await clickMenu('turn'); turns.push((await state()).snap); }
-check('Turn cycles through 15°, 30°, 45°', [...turns].sort((a, b) => a - b).join() === '15,30,45', turns.join(' → '));
+const snap0 = s.snap, turns = [];
+for (const t of [15, 45, snap0]) { await clickMenu('turn', t); turns.push((await state()).snap); }
+check('Turn: 15°, 45° and back, one click each', turns.join() === `15,45,${snap0}` && (await cell('walk', 'turn')).value === snap0, turns.join(' → '));
 const feet = (await state()).rig[1] - (await state()).lift;
-await clickMenu('height');
+await clickMenu('height', 1.4);
 s = await state();
 check('Height 1.4 m puts the eyes at 1.29 m', s.height === 1.4 && Math.abs(s.head[1] - feet - 1.29) < 0.01, `eyes ${(s.head[1] - feet).toFixed(2)} m`);
 await shot('height-1.4');
-for (let i = 0; i < 3; i++) await clickMenu('height'); // 1.7, 2.0, back to yours
+await clickMenu('height', 0);
 s = await state();
 check('Height back to your own', s.height === 0 && Math.abs(s.head[1] - feet - 1.6) < 0.01);
+
+// Solid walls: on, walking at a wall stops a body's width in front of it; off, you walk through.
+{
+	const wallAt = (a) => page.evaluate(async (a) => {
+		const THREE = await import('three');
+		const x = window.__svr.xr, head = x.headWorld(), feet = x.rig.position.y - x.lift;
+		const ray = new THREE.Raycaster();
+		// side: start that far to the right of the head (metres), looking the same way.
+		const look = (ang, side = 0) => {
+			const o = new THREE.Vector3(head.x + Math.cos(ang) * side, feet + 1.0, head.z - Math.sin(ang) * side);
+			ray.set(o, new THREE.Vector3(-Math.sin(ang), 0, -Math.cos(ang)));
+			return ray.intersectObjects(x.model.layers.walls.children, false)[0]?.distance ?? null;
+		};
+		if (a !== null) return { a, d: look(a), head: head.toArray() };
+		// The nearest flat stretch of wall (0.8 m wide, square to you) 0.5-2 m
+		// away, so you walk straight at it: the end of a short wall would let
+		// you slide round it, as it should.
+		const flat = (ang, d) => [-0.4, 0.4].every((s) => { const e = look(ang, s); return e !== null && Math.abs(e - d) < 0.03; });
+		let best = null;
+		for (let i = 0; i < 144; i++) { const ang = i / 144 * Math.PI * 2, d = look(ang); if (d && d > 0.5 && d < 2 && (!best || d < best.d) && flat(ang, d)) best = { a: ang, d }; }
+		return best && { ...best, head: head.toArray() };
+	}, a);
+	const w = await wallAt(null);
+	if (!w) {
+		check('Solid walls (needs a flat wall 0.5-2 m away)', false);
+	} else {
+		await clickMenu('solid');
+		check('Solid walls switch turns on', (await cell('walk', 'solid')).value === true && await page.evaluate(() => window.__svr.xr.solid));
+		await click('right', 'b-button');
+		await page.evaluate((a) => { // face the wall
+			const x = window.__svr.xr, V = x.rig.position.constructor;
+			x.rig.updateMatrixWorld(true);
+			const f = new V(0, 0, -1).transformDirection(x.camera.matrixWorld);
+			x.turn(a - Math.atan2(-f.x, -f.z));
+		}, w.a);
+		await stick('left', 0, -1); await frames(200); await stick('left', 0, 0); await frames(3);
+		const stopped = await wallAt(w.a);
+		const walked = Math.hypot(stopped.head[0] - w.head[0], stopped.head[2] - w.head[2]);
+		check('Solid walls: you stop a body\'s width in front of a wall', stopped.d !== null && stopped.d > 0.17 && stopped.d < 0.3 && walked > w.d - 0.35, `wall was ${w.d.toFixed(2)} m away; walked ${walked.toFixed(2)} m, now ${stopped.d?.toFixed(2)} m from it`);
+		await shot('walk-solid-wall');
+		await page.evaluate(() => window.__svr.xr.menuAction('solid')); // off
+		await stick('left', 0, -1); await frames(40); await stick('left', 0, 0); await frames(3);
+		const through = await wallAt(w.a);
+		const along = (through.head[0] - w.head[0]) * -Math.sin(w.a) + (through.head[2] - w.head[2]) * -Math.cos(w.a);
+		check('Solid walls off: you walk through it', along > w.d + 0.05, `${along.toFixed(2)} m along, the wall at ${w.d.toFixed(2)} m`);
+	}
+	await click('right', 'a-button');
+}
 await clickMenu('dollhouse');
 s = await state();
 check('Dollhouse returns from walk', s.mode === 'dollhouse' && s.rig[0] === 0 && s.rig[2] === 0 && s.menu === null);
@@ -470,17 +556,17 @@ const storeys = () => page.evaluate(() => {
 	const x = window.__svr.xr, shown = new Set(), hidden = new Set();
 	for (const g of [...Object.values(x.model.layers), x.model.lamps]) for (const m of g?.children ?? []) (m.visible ? shown : hidden).add(m.userData.storey ?? 0);
 	const topCeilings = x.model.layers.ceilings.children.filter((m) => m.visible).map((m) => m.userData.storey);
-	return { count: x.model.storeys, shown: [...shown].sort(), hidden: [...hidden].sort(), topCeilings, label: x.menus.dollhouse.items.find((i) => i.id === 'levels').label,
+	return { count: x.model.storeys, shown: [...shown].sort(), hidden: [...hidden].sort(), topCeilings, level: x.menus.dollhouse.get('levels').value, levelOptions: x.menus.dollhouse.get('levels').options.map((o) => o.label).join(' '),
 		pointable: x.targets().pointable.every((m) => m.visible), lamps: x.model.lamps?.children.length ?? 0, lampsOn: !!x.model.lamps?.visible, multi: x.model.multiLevel };
 });
 let lv = await storeys();
-check('example home: two storeys, all shown', lv.count === 2 && lv.multi && lv.hidden.length === 0 && lv.label === 'Levels: all', JSON.stringify(lv));
+check('example home: two storeys, all shown', lv.count === 2 && lv.multi && lv.hidden.length === 0 && lv.level === 1 && lv.levelOptions === '1 All (2)', JSON.stringify(lv));
 await click('right', 'a-button');
 await shot('example-menu');
-await clickMenu('levels');
+await clickMenu('levels', 0);
 await frames(5);
 lv = await storeys();
-check('Levels shows the ground floor only, without its ceilings', lv.shown.join() === '0' && lv.hidden.includes(1) && lv.topCeilings.length === 0 && lv.label === 'Levels: 1 of 2' && lv.pointable, JSON.stringify(lv));
+check('Levels shows the ground floor only, without its ceilings', lv.shown.join() === '0' && lv.hidden.includes(1) && lv.topCeilings.length === 0 && lv.level === 0 && lv.pointable, JSON.stringify(lv));
 await page.evaluate(() => window.__svr.lighting.setTime('night'));
 await frames(5);
 lv = await storeys();
@@ -489,10 +575,10 @@ await click('right', 'b-button');
 await shot('example-ground-floor-night');
 await page.evaluate(() => window.__svr.lighting.setTime('morning'));
 await click('right', 'a-button');
-await clickMenu('levels');
+await clickMenu('levels', 1);
 await frames(5);
 lv = await storeys();
-check('Levels cycles back to all', lv.hidden.length === 0 && lv.label === 'Levels: all' && !lv.lampsOn, JSON.stringify(lv));
+check('Levels: All shows every storey again', lv.hidden.length === 0 && lv.level === 1 && !lv.lampsOn, JSON.stringify(lv));
 await clickMenu('figure');
 await frames(3);
 check('Figure can be switched off', !(await state()).figure);
@@ -500,14 +586,14 @@ await clickMenu('figure');
 await frames(3);
 check('and on again', (await state()).figure);
 // Depth shading: switched on from the menu, prepared in the background, headset only.
-const depth = () => page.evaluate(() => { const d = window.__svr.depth, x = window.__svr.xr; return { on: d.enabled, state: d.state, uniform: d.uniform.value, label: x.menus.dollhouse.items.find((i) => i.id === 'depth').label }; });
-check('Depth starts off', (await depth()).label === 'Depth: off' && (await depth()).uniform === 0);
+const depth = () => page.evaluate(() => { const d = window.__svr.depth, x = window.__svr.xr; return { on: d.enabled, state: d.state, uniform: d.uniform.value, label: x.menus.dollhouse.get('depth').label, switched: x.menus.dollhouse.get('depth').value }; });
+check('Depth starts off', (await depth()).switched === false && (await depth()).uniform === 0);
 await clickMenu('depth');
 await page.waitForFunction(() => window.__svr.depth.state === 'ready', null, { timeout: 120000 }).catch(() => {});
 await frames(5);
 let dp = await depth();
-check('Depth shading is prepared and shown in the headset', dp.on && dp.state === 'ready' && dp.uniform === 1 && dp.label === 'Depth: on', JSON.stringify(dp));
-await clickMenu('levels'); // ground floor only, then walk in: every storey comes back
+check('Depth shading is prepared and shown in the headset', dp.on && dp.state === 'ready' && dp.uniform === 1 && dp.switched === true && dp.label === 'Depth', JSON.stringify(dp));
+await clickMenu('levels', 0); // ground floor only, then walk in: every storey comes back
 await clickMenu('walk');
 await frames(15);
 lv = await storeys();

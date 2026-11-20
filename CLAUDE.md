@@ -25,7 +25,8 @@ js/sh3d.js        SH3D parser and scene builder (pure functions, Node-testable)
 js/formats.js     OBJ / zip / GLB / DAE / 3DS loading and unit detection
 js/optimise.js    merge-by-material and BVH
 js/xr-input.js    controllers, rays, thumbsticks, teleport arc, snap turn
-js/panel.js       canvas-texture VR menu and controls card
+js/panel.js       canvas-texture VR menu (switches, options, slider, buttons) and controls card
+js/walls.js       solid walls while walking and see-through walls and furniture (headset only)
 js/lighting.js    time of day (sun from the compass) and on-demand shadows
 js/depth.js       depth shading (headset only): corner gradients baked per vertex, no post-process
 js/storage.js     IndexedDB recent files

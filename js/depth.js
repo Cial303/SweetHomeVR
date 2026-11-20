@@ -291,7 +291,8 @@ export class DepthShading {
 			yield;
 		}
 		// 2. Everything that blocks light: the whole model except glass.
-		const solid = (mesh) => ![].concat(mesh.material).some((m) => m.transparent && m.opacity < 0.9);
+		// (The model's own opacity: see-through in the headset (js/walls.js) is not glass.)
+		const solid = (mesh) => ![].concat(mesh.material).some((m) => { const b = m.userData.svrBase ?? m; return b.transparent && b.opacity < 0.9; });
 		const blockers = [...baked, ...of(BLOCKING_LAYERS)].map((m) => m.mesh).filter(solid);
 		const total = baked.reduce((n, m) => n + m.mesh.geometry.attributes.position.count, 0);
 		if (!blockers.length || !total) return;

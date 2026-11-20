@@ -7,7 +7,11 @@
 //              right stick forward or a held trigger aims a teleport arc, a
 //              held grip grabs the space so you can pull yourself along. In a one-level home
 //              you stay on the floor and walk through furniture; with more
-//              levels you can stand on anything, so stairs work. B or Y goes back.
+//              levels you can stand on anything, so stairs work. With Solid
+//              walls on, walls stop you (furniture never does). B or Y goes back.
+//
+// See-through (both modes, headset only) fades walls and furniture towards
+// a glass house: js/walls.js.
 //
 // One session for both views: when the browser supports it, an
 // immersive-ar session is used and "VR" simply draws an opaque world over
@@ -29,6 +33,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Panel, ControlsCard } from './panel.js';
 import { XRInput, TeleportArc, yawOf } from './xr-input.js';
+import { TIMES } from './lighting.js';
+import { WallCollider, SeeThrough, SEE_THROUGH_MAX } from './walls.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
@@ -56,7 +62,8 @@ const ZOOM_SPEED = 1.2; // e-folds/s at full stick
 const WALK_SPEED = 0.75; // m/s at full stick
 const STEP = 0.6; // floor following: look this far above and below the feet
 const FADE_OUT = 0.1, FADE_IN = 0.15; // teleport fade, seconds
-const MENU_DISTANCE = 0.65, MENU_DROP = 0.1, MENU_LEFT = 0.1; // summoned menu, relative to the eyes (controls card to its left)
+const MENU_DISTANCE = 0.75, MENU_DROP = 0.1, MENU_LEFT = 0.1; // summoned menu, relative to the eyes (controls card to its left)
+const MENU_WIDTH = 0.62; // metres
 // In the dollhouse the menu opens off to the left and further away, so it
 // never sits between you and the model (it used to appear right in front of
 // the face on entry), and you can watch the model while changing a setting.
@@ -68,7 +75,8 @@ const ORB_TOUCH = 0.08, ORB_RELEASE = 0.14; // touching an orb with the other ha
 const HINT = 'A / X, or an orb on your hands';
 const FIGURE_HEIGHT = 1.75; // the scale figure beside the dollhouse, metres at the model's scale
 const FIGURE_GAP = 0.45; // how far in front of the home it stands, metres at the model's scale
-const KEYS = { turn: 'svr.snapAngle', height: 'svr.height', view: 'svr.view', figure: 'svr.figure' };
+const KEYS = { turn: 'svr.snapAngle', height: 'svr.height', view: 'svr.view', figure: 'svr.figure', solid: 'svr.solidWalls', seeThrough: 'svr.seeThrough' };
+const TIME_LABELS = { morning: 'Morning', noon: 'Noon', sunset: 'Sunset', night: 'Night' };
 
 export class XRExperience {
 	/**
@@ -97,6 +105,15 @@ export class XRExperience {
 		const height = Number(safeGet(KEYS.height));
 		this.personHeight = HEIGHTS.includes(height) ? height : 0;
 		this.figureOn = safeGet(KEYS.figure) !== '0'; // scale figure beside the dollhouse
+		// Walking: walls stop you (off by default, as before). Furniture never does.
+		this.solid = safeGet(KEYS.solid) === '1';
+		this.collider = new WallCollider();
+		this.body = null; // walking: where the body was last frame (null: just placed)
+		// See-through walls and furniture (headset only): 0 = as modelled, 1 = glass house.
+		const see = Number(safeGet(KEYS.seeThrough));
+		this.seeThroughAmount = see > 0 && see <= 1 ? see : 0;
+		this.seeThrough = new SeeThrough();
+		this.drag = null; // a slider being dragged: { c, id }
 		this.maxStorey = null; // dollhouse: highest storey shown (null = all)
 		this.menuShownOnce = false;
 		this.pendingRecentre = false;
@@ -208,32 +225,40 @@ export class XRExperience {
 		this.markers = [m, m.clone()]; // one per controller
 	}
 
-	/** One menu per mode, each with a controls card beside it; they live in the rig. */
+	/**
+	 * One menu per mode, each with a controls card beside it; they live in
+	 * the rig. On/off settings are switches, settings with a few values are
+	 * choices with every option visible (one click, no dropdown to open in
+	 * VR), see-through is a slider, and actions are buttons.
+	 */
 	buildMenus() {
-		const opts = (title) => ({ title, hint: HINT, width: 0.42, pxPerM: 1600, columns: 2 });
+		const opts = (title) => ({ title, hint: HINT, width: MENU_WIDTH, pxPerM: 1600 });
+		const light = [{ type: 'choice', id: 'light', label: 'Time of day', options: TIMES.map((t) => ({ value: t, label: TIME_LABELS[t] ?? t })), value: 'morning' }];
+		const sw = (id, label) => ({ type: 'switch', id, label, value: false });
+		const seeThrough = [{ type: 'slider', id: 'seethrough', label: 'See-through', value: 0, format: (v) => (v > 0 ? `${Math.round(v * 100)}%` : 'Off') }];
+		const view = [{ type: 'choice', id: 'view', label: 'View', options: [{ value: 'vr', label: 'VR' }, { value: 'ar', label: 'Passthrough' }], value: 'vr' }];
+		const exit = [{ id: 'exit', label: 'Exit VR', primary: true }];
 		this.menus = {
 			dollhouse: new Panel([
-				{ id: 'walk', label: 'Walk in' },
-				{ id: 'recentre', label: 'Recentre' },
-				{ id: 'light', label: 'Light: morning' },
-				{ id: 'shadows', label: 'Shadows: off' },
-				{ id: 'depth', label: 'Depth: off' },
-				{ id: 'ceilings', label: 'Ceilings: on' },
-				{ id: 'levels', label: 'Levels: all' },
-				{ id: 'figure', label: 'Figure: on' },
-				{ id: 'view', label: 'View: VR' },
-				{ id: 'exit', label: 'Exit VR', primary: true },
+				[{ id: 'walk', label: 'Walk in' }, { id: 'recentre', label: 'Recentre' }],
+				light,
+				[sw('shadows', 'Shadows'), sw('depth', 'Depth')],
+				[sw('ceilings', 'Ceilings'), sw('figure', 'Figure')],
+				seeThrough,
+				[{ type: 'choice', id: 'levels', label: 'Up to level', options: [], disabled: true, note: 'One level' }],
+				view,
+				exit,
 			], opts('Dollhouse')),
 			walk: new Panel([
-				{ id: 'dollhouse', label: 'Dollhouse' },
-				{ id: 'ceilings', label: 'Ceilings: on' },
-				{ id: 'light', label: 'Light: morning' },
-				{ id: 'shadows', label: 'Shadows: off' },
-				{ id: 'depth', label: 'Depth: off' },
-				{ id: 'turn', label: 'Turn: 30°' },
-				{ id: 'height', label: 'Height: yours' },
-				{ id: 'view', label: 'View: VR' },
-				{ id: 'exit', label: 'Exit VR', primary: true },
+				[{ id: 'dollhouse', label: 'Back to the dollhouse' }],
+				light,
+				[sw('shadows', 'Shadows'), sw('depth', 'Depth')],
+				[sw('ceilings', 'Ceilings'), sw('solid', 'Solid walls')],
+				seeThrough,
+				[{ type: 'choice', id: 'turn', label: 'Turn', options: TURNS.map((t) => ({ value: t, label: `${t}°` })), value: 30 }],
+				[{ type: 'choice', id: 'height', label: 'Height', options: HEIGHTS.map((h) => ({ value: h, label: h ? `${h.toFixed(1)} m` : 'Yours' })), value: 0 }],
+				view,
+				exit,
 			], opts('Walking')),
 		};
 		const either = (btn) => [
@@ -329,6 +354,8 @@ export class XRExperience {
 				m.receiveShadow = true;
 			}
 		}
+		this.seeThrough.setModel(model.layers);
+		this.applySeeThrough();
 		this.updateSky();
 		this.updateLabels();
 	}
@@ -367,6 +394,7 @@ export class XRExperience {
 		this.sessionMode = kind;
 		this.depth?.setActive(true); // depth shading shows in the headset only
 		this.saved = { background: this.scene.background };
+		this.applySeeThrough(); // (headset only, like depth shading)
 		this.camera.near = XR_NEAR;
 		this.camera.far = XR_FAR;
 		this.camera.updateProjectionMatrix();
@@ -394,6 +422,8 @@ export class XRExperience {
 	handleEnd() {
 		this.session = null;
 		this.depth?.setActive(false);
+		this.drag = null;
+		this.applySeeThrough(); // the 2D page shows the model as modelled
 		this.mode = null;
 		this.grab = null;
 		this.tele = null;
@@ -502,25 +532,53 @@ export class XRExperience {
 	// Menu and orbs
 	// -----------------------------------------------------------------------
 
+	/** Shows the current settings in both menus (switch positions, chosen options, slider). */
 	updateLabels() {
-		const on = this.model?.layers.ceilings.visible ?? true;
-		const view = this.sessionMode === 'vr' ? 'View: VR only' : `View: ${this.view === 'vr' ? 'VR' : 'passthrough'}`;
+		const ceilings = this.model?.layers.ceilings.visible ?? true;
+		const view = this.sessionMode === 'vr' ? { disabled: true, note: 'VR only' } : { disabled: false, value: this.view };
 		for (const p of Object.values(this.menus)) {
-			p.setLabel('ceilings', `Ceilings: ${on ? 'on' : 'off'}`);
-			p.setLabel('view', view);
-		}
-		this.menus.walk.setLabel('turn', `Turn: ${this.snapAngle}°`);
-		if (this.lighting) {
-			for (const p of Object.values(this.menus)) {
-				p.setLabel('light', `Light: ${this.lighting.time}`);
-				p.setLabel('shadows', `Shadows: ${this.lighting.shadows ? 'on' : 'off'}`);
-				if (this.depth) p.setLabel('depth', `Depth: ${this.depth.label()}`);
+			p.set('ceilings', { value: ceilings });
+			p.set('view', view);
+			p.set('seethrough', { value: this.seeThroughAmount });
+			if (this.lighting) {
+				p.set('light', { value: this.lighting.time });
+				p.set('shadows', { value: this.lighting.shadows });
+			}
+			if (this.depth) {
+				const preparing = this.depth.enabled && this.depth.state === 'baking';
+				p.set('depth', { value: this.depth.enabled, label: preparing ? `Depth ${this.depth.label()}` : 'Depth' });
 			}
 		}
-		this.menus.walk.setLabel('height', `Height: ${this.personHeight ? `${this.personHeight.toFixed(1)} m` : 'yours'}`);
+		const walk = this.menus.walk, doll = this.menus.dollhouse;
+		walk.set('turn', { value: this.snapAngle });
+		walk.set('height', { value: this.personHeight });
+		const walls = (this.model?.layers.walls?.children.length ?? 0) > 0;
+		walk.set('solid', walls ? { disabled: false, value: this.solid } : { disabled: true, note: 'No walls', value: false });
+		// Levels: show up to storey 1, 2, ... N (N = all of them).
 		const storeys = this.model?.storeys ?? 1;
-		this.menus.dollhouse.setLabel('levels', storeys < 2 ? 'Levels: one' : this.maxStorey === null ? 'Levels: all' : `Levels: ${this.maxStorey + 1} of ${storeys}`, storeys < 2);
-		this.menus.dollhouse.setLabel('figure', `Figure: ${this.figureOn ? 'on' : 'off'}`);
+		doll.set('levels', storeys < 2 ? { disabled: true, note: 'One level' } : {
+			disabled: false,
+			options: Array.from({ length: storeys }, (_, i) => ({ value: i, label: i === storeys - 1 ? `All (${storeys})` : `${i + 1}` })),
+			value: this.maxStorey ?? storeys - 1,
+		});
+		doll.set('figure', { value: this.figureOn });
+	}
+
+	/**
+	 * See-through, in the headset only (the 2D page shows the model as
+	 * modelled). Faded walls and furniture stop casting shadows, like glass.
+	 */
+	applySeeThrough() {
+		const amount = this.session ? this.seeThroughAmount : 0;
+		this.seeThrough.set(amount);
+		const faded = 1 - SEE_THROUGH_MAX * amount < 0.9;
+		let changed = false;
+		for (const m of this.seeThrough.meshes) {
+			const glass = [].concat(m.material).some((mat) => { const b = mat.userData.svrBase ?? mat; return b.transparent && b.opacity < 0.9; });
+			const cast = !glass && !faded;
+			if (m.castShadow !== cast) { m.castShadow = cast; changed = true; }
+		}
+		if (changed) this.lighting?.refresh();
 	}
 
 	/**
@@ -577,9 +635,19 @@ export class XRExperience {
 		let hover = null, action = null, toggle = false, close = false;
 		const hot = new Set();
 		const active = this.input.active();
+		if (this.drag && (!this.menu || !this.drag.c.source || !this.drag.c.state.trigger)) this.drag = null; // let go
 		for (const c of active) {
 			this.input.setRaycaster(c, this.raycaster);
 			const menuHit = this.menu ? this.raycaster.intersectObject(this.menu.mesh, false)[0] : null;
+			if (this.drag?.c === c) {
+				// Dragging a slider: follow the laser along the track while the trigger is held.
+				onUI.add(c);
+				this.input.showHit(c, menuHit?.distance ?? null);
+				const value = menuHit ? this.menu.sliderValue(this.drag.id, menuHit.uv) : null;
+				if (value !== null) action = { id: this.drag.id, value };
+				hover = { id: this.drag.id, slider: true };
+				continue;
+			}
 			let orbHit = null, orb = null;
 			for (const o of this.orbs) {
 				if (!o.holder || o.holder === c) continue;
@@ -589,9 +657,12 @@ export class XRExperience {
 			if (menuHit) {
 				onUI.add(c);
 				this.input.showHit(c, menuHit.distance);
-				const id = this.menu.hitTest(menuHit.uv);
-				hover ||= id;
-				if (c.state.down.trigger && id) action = id;
+				const target = this.menu.hitTest(menuHit.uv);
+				hover ||= target;
+				if (c.state.down.trigger && target) {
+					action = target;
+					if (target.slider) this.drag = { c, id: target.id };
+				}
 			} else if (orbHit) {
 				onUI.add(c);
 				hot.add(orb);
@@ -635,35 +706,43 @@ export class XRExperience {
 		return false;
 	}
 
-	menuAction(id) {
+	/**
+	 * Runs a menu target: { id } for buttons and switches (a switch flips),
+	 * { id, value } for a choice's option or a slider's position. A bare id
+	 * string works too.
+	 */
+	menuAction(target) {
+		const { id, value } = typeof target === 'string' ? { id: target } : target;
 		switch (id) {
 			case 'walk': this.closeMenu(); this.walkIn(); break;
 			case 'dollhouse': this.closeMenu(); this.enterDollhouse(); break;
 			case 'ceilings': this.toggleCeilings(); break;
-			case 'view':
-				if (this.sessionMode !== 'ar') break;
-				this.view = this.view === 'vr' ? 'ar' : 'vr';
+			case 'view': {
+				const next = value ?? (this.view === 'vr' ? 'ar' : 'vr');
+				if (this.sessionMode !== 'ar' || next === this.view) break;
+				this.view = next;
 				safeSet(KEYS.view, this.view);
 				this.applyView();
 				this.updateLabels();
 				break;
+			}
 			case 'turn':
-				this.snapAngle = TURNS[(TURNS.indexOf(this.snapAngle) + 1) % TURNS.length];
+				this.snapAngle = TURNS.includes(value) ? value : TURNS[(TURNS.indexOf(this.snapAngle) + 1) % TURNS.length];
 				safeSet(KEYS.turn, String(this.snapAngle));
 				this.updateLabels();
 				break;
 			case 'height':
-				this.personHeight = HEIGHTS[(HEIGHTS.indexOf(this.personHeight) + 1) % HEIGHTS.length];
+				this.personHeight = HEIGHTS.includes(value) ? value : HEIGHTS[(HEIGHTS.indexOf(this.personHeight) + 1) % HEIGHTS.length];
 				safeSet(KEYS.height, String(this.personHeight));
 				if (this.mode === 'walk') this.setLift(this.personLift());
 				this.updateLabels();
 				break;
 			case 'levels': {
-				// all -> lowest only -> lowest two -> ... -> all
+				// Show storeys up to `value` (0 = the lowest); the top one means all.
 				const count = this.model.storeys ?? 1;
 				if (count < 2) break;
-				const next = this.maxStorey === null ? 0 : this.maxStorey + 1;
-				this.maxStorey = next >= count - 1 ? null : next;
+				const top = value ?? ((this.maxStorey ?? -1) + 1) % count; // (bare id: the next one)
+				this.maxStorey = top >= count - 1 ? null : top;
 				this.applyStoreys();
 				this.updateLabels();
 				break;
@@ -674,9 +753,29 @@ export class XRExperience {
 				this.applyView();
 				this.updateLabels();
 				break;
-			case 'light': this.lighting?.nextTime(); this.updateLabels(); break;
+			case 'light':
+				if (value) this.lighting?.setTime(value);
+				else this.lighting?.nextTime();
+				this.updateLabels();
+				break;
 			case 'shadows': this.lighting?.setShadows(!this.lighting.shadows); this.updateLabels(); break;
 			case 'depth': this.depth?.setEnabled(!this.depth.enabled); this.updateLabels(); break;
+			case 'solid':
+				this.solid = !this.solid;
+				safeSet(KEYS.solid, this.solid ? '1' : '0');
+				this.body = null; // start again from where you stand
+				this.updateLabels();
+				break;
+			case 'seethrough': {
+				// Steps of 5%, so the end of the track is exactly 0 or 100%.
+				const v = Math.round(THREE.MathUtils.clamp(value ?? 0, 0, 1) * 20) / 20;
+				if (v === this.seeThroughAmount) break;
+				this.seeThroughAmount = v;
+				safeSet(KEYS.seeThrough, String(v));
+				this.applySeeThrough();
+				this.updateLabels();
+				break;
+			}
 			case 'recentre': this.closeMenu(); this.measureDollLift(this.camera.matrix); this.recentre(); break;
 			case 'exit': this.closeMenu(); this.end(); break;
 		}
@@ -894,6 +993,8 @@ export class XRExperience {
 		this.applyView();
 		this.applyStoreys();
 		this.setWalkTransform();
+		// Solid walls: the walls as they stand now, at 1:1 (every storey is shown while walking).
+		this.collider.setMeshes((this.model.layers.walls?.children ?? []).filter((m) => m.visible));
 		this.lift = this.personLift();
 		const target = this.centerer.localToWorld(modelPt.clone());
 		this.placeUser(target, yaw);
@@ -912,6 +1013,26 @@ export class XRExperience {
 		const off = new THREE.Vector3(headLocal.x, 0, headLocal.z).applyAxisAngle(UP, this.rig.rotation.y);
 		this.rig.position.set(target.x - off.x, target.y + this.lift, target.z - off.z);
 		this.rig.updateMatrixWorld(true);
+		this.body = null; // (solid walls: only pushed out from here, never swept from the old spot)
+	}
+
+	/**
+	 * Solid walls: whatever moved the head this frame (the stick, a grip
+	 * pull, or walking for real in the room), the body slides along walls
+	 * instead of entering them; the rig is shifted back by the difference.
+	 * Only walls: furniture, doors and windows stay walk-through.
+	 */
+	keepOutOfWalls() {
+		const now = this.headWorld();
+		if (!this.solid || !this.collider.active) { this.body = now; return; }
+		const feet = this.rig.position.y - this.lift;
+		const to = this.collider.move(this.body ?? now, now, feet, now.y);
+		if (to.x !== now.x || to.z !== now.z) {
+			this.rig.position.x += to.x - now.x;
+			this.rig.position.z += to.z - now.z;
+			this.rig.updateMatrixWorld(true);
+		}
+		this.body = to;
 	}
 
 	/** Head position in the world (from the rig and this frame's head pose). */
@@ -947,7 +1068,7 @@ export class XRExperience {
 	/**
 	 * Floor following: cast down from STEP above the feet; adopt a walkable
 	 * surface (see targets()) within ±STEP, which handles stairs and levels.
-	 * Walls don't block movement.
+	 * (Walls block movement only with Solid walls on: keepOutOfWalls().)
 	 */
 	followFloor(dt) {
 		const head = this.headWorld();
@@ -1069,7 +1190,10 @@ export class XRExperience {
 			this.rig.position.addScaledVector(move, WALK_SPEED * dt);
 		}
 
-		if (!this.fade) this.followFloor(dt);
+		if (!this.fade) {
+			this.keepOutOfWalls();
+			this.followFloor(dt);
+		}
 	}
 
 	// -----------------------------------------------------------------------

@@ -82,21 +82,26 @@ Press **Enter VR** once a model is open. In the headset, the menu switches betwe
 
 **Menu:** a glowing orb floats over each hand. Point at one with the other hand and pull the trigger, touch it with the other controller, or press **A** or **X**: the menu opens with a drawing of the controllers and what each button does. In the dollhouse it opens to your left, clear of the model; while walking, in front of you. **B** / **Y** or a click elsewhere closes it. It opens by itself the first time.
 
+The menu is a list of settings: **switches** for what is on or off (Shadows, Depth, Ceilings, Figure, Solid walls), a row of **options** with the current one in blue where there are a few to choose from (Time of day, Turn, Height, Up to level, View: one click, nothing to open), a **slider** for See-through (pull the trigger on it and drag), and **buttons** for actions (Walk in, Recentre, Back to the dollhouse, Exit VR). Settings are remembered.
+
 **Dollhouse**
 - The home stands on a low museum plinth in a gallery room. You look down at it as a 2 m tall person would, whether you sit or stand, so it's easy to look into the rooms. If you change position, **Recentre** measures your height again.
 - **Thumbstick** left/right rotates it; up/down zooms it (½× to 4×).
 - Point the **laser** at it: an orange figure shows where you'd stand. **Trigger** takes you there at real size.
 - **Grip** and move your hand to lift it or move it; it never sinks into the plinth.
 - A small grey **scale figure** (1.75 m at the model's scale) stands by the home's front corner, like the little people in architects' models, so you can judge its size.
-- Menu: **Walk in** (at Sweet Home 3D's virtual visitor position), **Recentre**, **Light** (morning, noon, sunset, night), **Shadows on/off**, **Ceilings on/off**, **Levels** (in a home with several storeys: show only the lower ones, with the ceilings off the top one shown), **Figure on/off**, **View: VR / passthrough**, **Exit VR**.
+- Menu: **Walk in** (at Sweet Home 3D's virtual visitor position), **Recentre**, **Time of day** (morning, noon, sunset, night), **Shadows**, **Depth**, **Ceilings**, **Figure**, **See-through**, **Up to level** (in a home with several storeys: show only the lower ones, with the ceilings off the top one shown), **View** (VR or passthrough), **Exit VR**.
 
 **Inside, at 1:1**
-- **Left stick** walks where you look. Walls don't stop you. In a one-level home you stay on the floor and walk through furniture; in a home with several levels you can step onto anything, so stairs work.
+- **Left stick** walks where you look. In a one-level home you stay on the floor and walk through furniture; in a home with several levels you can step onto anything, so stairs work.
+- **Solid walls** (menu, off by default): walls stop you, whether you use the stick, pull yourself along or walk for real in your room, and you slide along them. Only walls: furniture, doors and windows stay walk-through, so doorways and stairs work. (OBJ and GLB files have no separate walls, so the switch is greyed out for them.)
 - **Hold a grip** (the button on the side of the handle) and move your hand to pull yourself along, as if grabbing the room.
 - **Right stick** left/right turns in steps (15°, 30° or 45°, set in the menu).
 - **Right stick forward**, or **hold a trigger**, and aim: a blue ring shows where you'll land (red on a wall). Let go to jump there.
 - **B** or **Y** goes back to the dollhouse.
-- Menu: **Dollhouse**, **Ceilings on/off**, **Light**, **Shadows**, **Turn**, **Height** (yours, 1.4, 1.7 or 2.0 m), **View**, **Exit VR**.
+- Menu: **Back to the dollhouse**, **Time of day**, **Shadows**, **Depth**, **Ceilings**, **Solid walls**, **See-through**, **Turn**, **Height** (yours, 1.4, 1.7 or 2.0 m), **View**, **Exit VR**.
+
+**See-through** (headset only, both menus): a slider that fades walls and furniture, up to a glass house where only 15% of them is left, so you can see into every room at once. Floors and ceilings stay as they are. Faded walls and furniture cast no shadows, like glass. The 2D page always shows the home as modelled.
 
 **Light and shadows:** the sun comes from the right direction for your home, using the compass in the Sweet Home 3D file. Shadows are off by default; when on, they are computed once (not every frame), so walking stays smooth. With ceilings on, sunlight only enters through the windows; turn ceilings off to let it in from above. At sunset and at night the home's lamps glow. The same settings are in the card at the top right of the 2D page; the light starts as morning.
 
@@ -196,7 +201,8 @@ config.js         Dropbox app key, Google API key, defaults
 js/main.js        2D page, renderer, loading, UI
 js/xr.js          VR/AR session: gallery and dollhouse, walk mode, menu orbs
 js/xr-input.js    controllers, lasers, buttons, thumbsticks, teleport arc
-js/panel.js       canvas-texture VR menu and controls card
+js/panel.js       canvas-texture VR menu (switches, options, slider, buttons) and controls card
+js/walls.js       solid walls while walking and see-through walls and furniture (headset only)
 js/lighting.js    time of day (sun from the home's compass) and shadows
 js/depth.js       depth shading for the headset: corner gradients baked per vertex
 js/optimise.js    merge geometry by material, BVH for raycasts

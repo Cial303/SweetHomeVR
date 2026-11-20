@@ -1,38 +1,57 @@
 // Floating VR menu drawn on a canvas texture and clicked with the controller
-// laser. Buttons sit in a grid of white buttons; a "primary" item (Exit) gets
-// its own full-width, taller, orange row at the bottom. hitTest() maps a ray
-// hit (UV) to a button id.
+// laser: a settings list. Each row holds one or more cells side by side:
+//   button  an action (Walk in, Recentre, Dollhouse). `primary`: Exit VR, a
+//           taller solid orange row at the bottom, set apart.
+//   switch  on or off (Shadows, Ceilings, Solid walls); the whole cell is the
+//           target, so it is easy to hit with a laser.
+//   choice  a few options side by side, the current one filled (Time of day,
+//           Turn, Height, View): every option is one click away, which beats
+//           a dropdown in VR. More than CHOICE_MAX options become a stepper
+//           (‹ value ›).
+//   slider  a value from 0 to 1 (See-through): press the trigger on the
+//           track and drag.
+// A cell can be disabled, with a short note in place of its control (Levels
+// in a one-storey home: "One level").
+// hitTest() maps a ray hit (UV) to { id, value }: the option of a choice, or
+// 0..1 along a slider.
 
 import * as THREE from 'three';
 
 const PX_PER_M = 1024; // canvas pixels per metre of panel
-const PAD = 24, GAP = 16, BTN_H = 96, TITLE_H = 72, HINT_H = 56;
-const PRIMARY_H = 124, PRIMARY_GAP = 32; // the primary button: taller, set apart
+const PAD = 28, GAP = 14, ROW_H = 80, TITLE_H = 72, HINT_H = 52;
+const PRIMARY_H = 108, PRIMARY_GAP = 26; // the primary button: taller, set apart
+const CHOICE_MAX = 6; // more options than this: a stepper
 const FONT = '-apple-system, "Segoe UI", Roboto, sans-serif';
 const COLOURS = {
-	panel: 'rgba(233,237,241,0.95)',
-	button: '#ffffff', buttonEdge: '#d3d9df', text: '#1d2329',
-	hover: '#e3edfb', hoverEdge: '#3d6fd8',
+	panel: 'rgba(233,237,241,0.96)',
+	cell: '#ffffff', edge: '#d3d9df', text: '#1d2329', soft: '#5d6873',
+	hover: '#e3edfb', hoverEdge: '#3d6fd8', accent: '#3d6fd8', accentText: '#ffffff',
+	segment: '#eef1f4', track: '#c4ccd4',
 	primary: '#e07a1f', primaryHover: '#b85f12', primaryText: '#ffffff',
 	off: '#e2e6ea', offText: '#9aa3ac',
 };
+const SWITCH_W = 96, SWITCH_H = 52;
 
 export class Panel {
 	/**
-	 * @param items  [{ id, label, primary }] (primary: full-width orange button at the bottom)
-	 * @param opts   { title, hint (small text under the buttons), width (m), pxPerM (canvas pixels per metre), columns }
+	 * @param rows  [[cell, cell], [cell], ...]; a cell is
+	 *              { type: 'button', id, label, primary }
+	 *              { type: 'switch', id, label, value: bool }
+	 *              { type: 'choice', id, label, options: [{ value, label }], value }
+	 *              { type: 'slider', id, label, value: 0..1, format(value) -> text }
+	 *              any cell: disabled, note (text shown instead of the control when disabled)
+	 * @param opts  { title, hint (small text at the bottom), width (m), pxPerM (canvas pixels per metre) }
 	 */
-	constructor(items, { title = '', hint = '', width = 0.36, pxPerM = PX_PER_M, columns = 1 } = {}) {
-		this.items = items.map((i) => ({ ...i }));
-		this.columns = columns;
+	constructor(rows, { title = '', hint = '', width = 0.62, pxPerM = PX_PER_M } = {}) {
+		this.rows = rows.map((r) => r.map((c) => ({ type: 'button', ...c })));
+		this.cells = new Map(this.rows.flat().map((c) => [c.id, c]));
 		this.title = title;
 		this.hint = hint;
-		this.hover = null;
+		this.hover = null; // key of the hovered target
 		const wPx = Math.round(width * pxPerM);
-		const nPrimary = items.filter((i) => i.primary).length;
-		const rows = Math.ceil((items.length - nPrimary) / columns);
-		const hPx = PAD * 2 + (title ? TITLE_H : 0) + rows * BTN_H + Math.max(0, rows - 1) * GAP
-			+ nPrimary * (PRIMARY_GAP + PRIMARY_H) + (hint ? HINT_H : 0);
+		this.size = { w: wPx, h: 0 };
+		this.boxes = this.layout();
+		const hPx = this.size.h;
 		this.canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
 		if (this.canvas) { this.canvas.width = wPx; this.canvas.height = hPx; }
 		this.texture = this.canvas ? new THREE.CanvasTexture(this.canvas) : null;
@@ -42,29 +61,76 @@ export class Panel {
 		this.mesh = new THREE.Mesh(geo, mat);
 		this.mesh.name = 'panel';
 		this.mesh.renderOrder = 10;
-		this.size = { w: wPx, h: hPx };
 		this.draw();
 	}
 
-	/** Button rectangles in canvas pixels. */
-	rects() {
-		const top = PAD + (this.title ? TITLE_H : 0);
-		const c = this.columns;
+	/** Cell rectangles in canvas pixels (and the panel height). */
+	layout() {
 		const full = this.size.w - 2 * PAD;
-		const w = (full - (c - 1) * GAP) / c;
+		let y = PAD + (this.title ? TITLE_H : 0);
+		const boxes = [];
+		this.rows.forEach((row, i) => {
+			const primary = row.some((c) => c.primary);
+			if (i > 0) y += primary ? PRIMARY_GAP : GAP;
+			const h = primary ? PRIMARY_H : ROW_H;
+			const w = (full - (row.length - 1) * GAP) / row.length;
+			row.forEach((cell, k) => boxes.push({ cell, x: PAD + k * (w + GAP), y, w, h, primary: !!cell.primary }));
+			y += h;
+		});
+		this.size.h = Math.round(y + (this.hint ? HINT_H : 0) + PAD);
+		return boxes;
+	}
+
+	/** Width given to a cell's label, before its control. */
+	labelWidth(b) {
+		return b.cell.type === 'switch' ? b.w - SWITCH_W - 40 : Math.round(Math.min(260, b.w * 0.3));
+	}
+
+	/** The control's area in a cell (choices, sliders). */
+	controlArea(b) {
+		const x = b.x + this.labelWidth(b);
+		return { x, y: b.y + 10, w: b.x + b.w - 12 - x, h: b.h - 20 };
+	}
+
+	/** Clickable targets: { id, value?, slider?, x, y, w, h } in canvas pixels. */
+	rects() {
 		const out = [];
-		const normal = this.items.filter((it) => !it.primary);
-		normal.forEach((it, i) => out.push({
-			id: it.id, x: PAD + (i % c) * (w + GAP), y: top + Math.floor(i / c) * (BTN_H + GAP), w, h: BTN_H,
-		}));
-		const rows = Math.ceil(normal.length / c);
-		let y = top + rows * BTN_H + Math.max(0, rows - 1) * GAP;
-		for (const it of this.items.filter((i) => i.primary)) {
-			y += PRIMARY_GAP;
-			out.push({ id: it.id, x: PAD, y, w: full, h: PRIMARY_H, primary: true });
-			y += PRIMARY_H;
+		for (const b of this.boxes) {
+			const c = b.cell;
+			if (c.disabled) continue;
+			if (c.type === 'choice') {
+				for (const s of this.segments(b)) if (s.value !== undefined) out.push({ id: c.id, value: s.value, x: s.x, y: s.y, w: s.w, h: s.h });
+			} else if (c.type === 'slider') {
+				const t = this.track(b);
+				out.push({ id: c.id, slider: true, x: t.x - 24, y: b.y, w: t.w + 48, h: b.h, track: t });
+			} else {
+				out.push({ id: c.id, x: b.x, y: b.y, w: b.w, h: b.h, primary: b.primary });
+			}
 		}
 		return out;
+	}
+
+	/** A choice's segments: one per option, or a stepper (‹ current ›) when there are many. */
+	segments(b) {
+		const c = b.cell, a = this.controlArea(b), gap = 6;
+		const opts = c.options ?? [];
+		if (opts.length > CHOICE_MAX) {
+			const i = Math.max(0, opts.findIndex((o) => o.value === c.value));
+			const arrow = 80;
+			return [
+				{ x: a.x, y: a.y, w: arrow, h: a.h, label: '‹', value: i > 0 ? opts[i - 1].value : undefined },
+				{ x: a.x + arrow + gap, y: a.y, w: a.w - 2 * (arrow + gap), h: a.h, label: opts[i]?.label ?? '', current: true },
+				{ x: a.x + a.w - arrow, y: a.y, w: arrow, h: a.h, label: '›', value: i < opts.length - 1 ? opts[i + 1].value : undefined },
+			];
+		}
+		const w = (a.w - (opts.length - 1) * gap) / Math.max(1, opts.length);
+		return opts.map((o, i) => ({ x: a.x + i * (w + gap), y: a.y, w, h: a.h, label: o.label, value: o.value, selected: o.value === c.value }));
+	}
+
+	/** A slider's track (the line the knob runs along), leaving room for the value on the right. */
+	track(b) {
+		const a = this.controlArea(b), valueW = 110;
+		return { x: a.x + 24, y: b.y + b.h / 2, w: a.w - valueW - 48 };
 	}
 
 	draw() {
@@ -81,62 +147,160 @@ export class Panel {
 			ctx.font = `600 40px ${FONT}`;
 			ctx.fillText(this.title, PAD + 8, PAD + TITLE_H / 2 - 4);
 		}
-		for (const r of this.rects()) {
-			const it = this.items.find((i) => i.id === r.id);
-			const hot = this.hover === r.id;
-			roundRect(ctx, r.x, r.y, r.w, r.h, 20);
-			if (r.primary) {
-				ctx.fillStyle = hot ? COLOURS.primaryHover : COLOURS.primary;
-				ctx.fill();
-			} else if (it.disabled) {
-				ctx.fillStyle = COLOURS.off; // nothing to choose here (e.g. Levels in a one-storey home)
-				ctx.fill();
-			} else {
-				ctx.fillStyle = hot ? COLOURS.hover : COLOURS.button;
-				ctx.fill();
-				ctx.lineWidth = hot ? 5 : 2;
-				ctx.strokeStyle = hot ? COLOURS.hoverEdge : COLOURS.buttonEdge;
-				ctx.stroke();
-			}
-			ctx.fillStyle = r.primary ? COLOURS.primaryText : it.disabled ? COLOURS.offText : COLOURS.text;
-			let px = r.primary ? 48 : 40; // shrink long labels to fit
-			do ctx.font = `${r.primary ? 600 : 500} ${px}px ${FONT}`;
-			while (ctx.measureText(it.label).width > r.w - 32 && --px > 24);
-			ctx.textAlign = 'center';
-			ctx.fillText(it.label, r.x + r.w / 2, r.y + r.h / 2 + 2);
-			ctx.textAlign = 'left';
-		}
+		for (const b of this.boxes) this.drawCell(ctx, b);
 		if (this.hint) {
-			ctx.fillStyle = '#5d6873';
-			let px = 30; // shrink to fit the width
-			do ctx.font = `400 ${px}px ${FONT}`;
-			while (ctx.measureText(this.hint).width > w - 2 * PAD && --px > 16);
+			ctx.fillStyle = COLOURS.soft;
 			ctx.textAlign = 'center';
+			fitFont(ctx, this.hint, w - 2 * PAD, 28, 16, 400);
 			ctx.fillText(this.hint, w / 2, h - PAD - HINT_H / 2 + 8);
 			ctx.textAlign = 'left';
 		}
 		this.texture.needsUpdate = true;
 	}
 
-	/** Button id under a ray hit's UV coordinates, or null. */
+	drawCell(ctx, b) {
+		const c = b.cell;
+		const hot = this.hover && this.hover.split('|')[0] === c.id;
+		if (c.type === 'button') {
+			roundRect(ctx, b.x, b.y, b.w, b.h, 20);
+			if (b.primary) {
+				ctx.fillStyle = hot ? COLOURS.primaryHover : COLOURS.primary;
+				ctx.fill();
+			} else {
+				ctx.fillStyle = c.disabled ? COLOURS.off : hot ? COLOURS.hover : COLOURS.cell;
+				ctx.fill();
+				if (!c.disabled) { ctx.lineWidth = hot ? 5 : 2; ctx.strokeStyle = hot ? COLOURS.hoverEdge : COLOURS.edge; ctx.stroke(); }
+			}
+			ctx.fillStyle = b.primary ? COLOURS.primaryText : c.disabled ? COLOURS.offText : COLOURS.text;
+			ctx.textAlign = 'center';
+			fitFont(ctx, c.label, b.w - 32, b.primary ? 46 : 36, 22, b.primary ? 600 : 500);
+			ctx.fillText(c.label, b.x + b.w / 2, b.y + b.h / 2 + 2);
+			ctx.textAlign = 'left';
+			return;
+		}
+		// Setting cells: white card, label on the left, control on the right.
+		roundRect(ctx, b.x, b.y, b.w, b.h, 20);
+		ctx.fillStyle = c.disabled ? COLOURS.off : COLOURS.cell;
+		ctx.fill();
+		const whole = c.type === 'switch' && hot && !c.disabled; // the whole switch cell is the target
+		ctx.lineWidth = whole ? 5 : 2;
+		ctx.strokeStyle = whole ? COLOURS.hoverEdge : COLOURS.edge;
+		ctx.stroke();
+		ctx.fillStyle = c.disabled ? COLOURS.offText : COLOURS.text;
+		fitFont(ctx, c.label, this.labelWidth(b) - 36, 32, 20, 500);
+		ctx.fillText(c.label, b.x + 24, b.y + b.h / 2 + 2);
+		if (c.disabled) {
+			if (c.note) {
+				ctx.fillStyle = COLOURS.offText;
+				ctx.textAlign = 'right';
+				fitFont(ctx, c.note, b.w - this.labelWidth(b) - 24, 28, 18, 500);
+				ctx.fillText(c.note, b.x + b.w - 24, b.y + b.h / 2 + 2);
+				ctx.textAlign = 'left';
+			}
+			return;
+		}
+		if (c.type === 'switch') this.drawSwitch(ctx, b);
+		else if (c.type === 'choice') this.drawChoice(ctx, b);
+		else if (c.type === 'slider') this.drawSlider(ctx, b, hot);
+	}
+
+	drawSwitch(ctx, b) {
+		const on = !!b.cell.value;
+		const x = b.x + b.w - SWITCH_W - 20, y = b.y + (b.h - SWITCH_H) / 2, r = SWITCH_H / 2;
+		roundRect(ctx, x, y, SWITCH_W, SWITCH_H, r);
+		ctx.fillStyle = on ? COLOURS.accent : COLOURS.track;
+		ctx.fill();
+		ctx.fillStyle = '#ffffff';
+		ctx.beginPath();
+		ctx.arc(on ? x + SWITCH_W - r : x + r, y + r, r - 6, 0, Math.PI * 2);
+		ctx.fill();
+	}
+
+	drawChoice(ctx, b) {
+		const id = b.cell.id;
+		for (const s of this.segments(b)) {
+			const hot = s.value !== undefined && this.hover === `${id}|${s.value}`;
+			roundRect(ctx, s.x, s.y, s.w, s.h, 14);
+			ctx.fillStyle = s.selected ? COLOURS.accent : hot ? COLOURS.hover : COLOURS.segment;
+			ctx.fill();
+			if (hot && !s.selected) { ctx.lineWidth = 4; ctx.strokeStyle = COLOURS.hoverEdge; ctx.stroke(); }
+			const dim = !s.current && s.value === undefined; // a stepper arrow at the end of the list
+			ctx.fillStyle = s.selected ? COLOURS.accentText : dim ? COLOURS.offText : COLOURS.text;
+			ctx.textAlign = 'center';
+			fitFont(ctx, s.label, s.w - 14, s.current ? 30 : 28, 16, s.selected || s.current ? 600 : 500);
+			ctx.fillText(s.label, s.x + s.w / 2, s.y + s.h / 2 + 2);
+			ctx.textAlign = 'left';
+		}
+	}
+
+	drawSlider(ctx, b, hot) {
+		const c = b.cell, t = this.track(b), v = THREE.MathUtils.clamp(c.value ?? 0, 0, 1);
+		roundRect(ctx, t.x, t.y - 5, t.w, 10, 5);
+		ctx.fillStyle = COLOURS.track;
+		ctx.fill();
+		if (v > 0) { roundRect(ctx, t.x, t.y - 5, Math.max(10, t.w * v), 10, 5); ctx.fillStyle = COLOURS.accent; ctx.fill(); }
+		ctx.beginPath();
+		ctx.arc(t.x + t.w * v, t.y, 22, 0, Math.PI * 2);
+		ctx.fillStyle = '#ffffff';
+		ctx.fill();
+		ctx.lineWidth = hot ? 6 : 3;
+		ctx.strokeStyle = COLOURS.accent;
+		ctx.stroke();
+		const text = c.format ? c.format(v) : `${Math.round(v * 100)}%`;
+		ctx.fillStyle = COLOURS.text;
+		ctx.textAlign = 'right';
+		ctx.font = `600 30px ${FONT}`;
+		ctx.fillText(text, b.x + b.w - 24, b.y + b.h / 2 + 2);
+		ctx.textAlign = 'left';
+	}
+
+	/** Target under a ray hit's UV coordinates ({ id, value } or { id, slider, value }), or null. */
 	hitTest(uv) {
 		if (!uv) return null;
 		const x = uv.x * this.size.w, y = (1 - uv.y) * this.size.h;
-		const r = this.rects().find((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
-		return r && !this.items.find((i) => i.id === r.id).disabled ? r.id : null;
+		const r = this.rects().find((t) => x >= t.x && x <= t.x + t.w && y >= t.y && y <= t.y + t.h);
+		if (!r) return null;
+		if (r.slider) return { id: r.id, slider: true, value: this.sliderAt(r.track, uv) };
+		return r.value !== undefined ? { id: r.id, value: r.value } : { id: r.id };
 	}
 
-	setHover(id) {
-		if (id === this.hover) return;
-		this.hover = id;
+	/** While dragging a slider: its value under a ray hit anywhere on the panel. */
+	sliderValue(id, uv) {
+		const r = this.rects().find((t) => t.id === id && t.slider);
+		return r && uv ? this.sliderAt(r.track, uv) : null;
+	}
+
+	sliderAt(track, uv) {
+		return THREE.MathUtils.clamp((uv.x * this.size.w - track.x) / track.w, 0, 1);
+	}
+
+	/** Highlights the target under a laser (a hitTest() result, or null). */
+	setHover(target) {
+		const key = target ? `${target.id}|${target.slider ? '' : target.value ?? ''}` : null;
+		if (key === this.hover) return;
+		this.hover = key;
 		this.draw();
 	}
 
-	/** Changes a button's text and, optionally, whether it can be pressed. */
-	setLabel(id, label, disabled = false) {
-		const it = this.items.find((i) => i.id === id);
-		if (it && (it.label !== label || !!it.disabled !== disabled)) { it.label = label; it.disabled = disabled; this.draw(); }
+	get(id) { return this.cells.get(id); }
+
+	/** Updates a cell (value, label, options, disabled, note); redraws if anything changed. */
+	set(id, props) {
+		const c = this.cells.get(id);
+		if (!c) return;
+		let changed = false;
+		for (const [k, v] of Object.entries(props)) {
+			const same = k === 'options' ? JSON.stringify(c[k]) === JSON.stringify(v) : c[k] === v;
+			if (!same) { c[k] = v; changed = true; }
+		}
+		if (changed) this.draw();
 	}
+}
+
+/** Sets the largest font (from `px` down to `min`) at which `text` fits in `max` pixels. */
+function fitFont(ctx, text, max, px, min, weight) {
+	do ctx.font = `${weight} ${px}px ${FONT}`;
+	while (ctx.measureText(text).width > max && --px > min);
 }
 
 function roundRect(ctx, x, y, w, h, r) {
