@@ -82,6 +82,25 @@ test('example home: walking at a merged wall stops in front of it', async () => 
 	assert.ok(went > best.d - 0.3 && went < best.d - 0.15, `wall at ${best.d.toFixed(2)} m, stopped after ${went.toFixed(2)} m`);
 });
 
+test('example home: doors and windows are merged apart and marked as openings', async () => {
+	const fs = await import('node:fs');
+	const path = await import('node:path');
+	const { unzipSync } = await import('fflate');
+	const { OBJLoader } = await import('three/addons/loaders/OBJLoader.js');
+	const { parseHome, buildHome } = await import('../js/sh3d.js');
+	const { prepareObjText } = await import('../js/formats.js');
+	const { optimiseModel } = await import('../js/optimise.js');
+	const entries = unzipSync(new Uint8Array(fs.readFileSync(path.resolve(import.meta.dirname, '../examples/example-home.sh3d'))));
+	const home = parseHome(new TextDecoder().decode(entries['Home.xml']));
+	const doors = home.pieces.filter((p) => p.kind === 'door').length;
+	const built = await buildHome(home, { loadModel: async (ref) => new OBJLoader().parse(prepareObjText(new TextDecoder().decode(entries[ref])).replace(/^\s*mtllib.*$/gm, '')) });
+	const { layers } = optimiseModel(built.root);
+	const openings = layers.main.children.filter((m) => m.userData.opening);
+	assert.ok(doors > 0 && openings.length > 0, `${doors} doors and windows, ${openings.length} opening meshes`);
+	assert.ok(layers.main.children.some((m) => !m.userData.opening), 'other furniture is not marked');
+	for (const name of ['walls', 'floors', 'ceilings', 'ground']) assert.ok(!layers[name].children.some((m) => m.userData.opening), `${name} has no openings`);
+});
+
 test('no walls: the collider is inactive and moves freely', () => {
 	const c = new WallCollider();
 	c.setMeshes([]);

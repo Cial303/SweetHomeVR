@@ -170,8 +170,19 @@ export class TeleportArc {
 	 * hitSegment(a, b) returns { point, normal (world), valid? } for the first
 	 * hit between a and b, or null (valid defaults to an upward-facing normal). Returns { valid, point } (point may be null).
 	 */
-	update(origin, dir, hitSegment) {
+	update(origin, dir, hitSegment, { ceiling } = {}) {
 		const v = dir.clone().normalize().multiplyScalar(ARC_SPEED);
+		// ceiling (world y): the arc never rises above it, so it passes under
+		// door frames instead of hitting the wall over a doorway. Aiming higher
+		// than that allows keeps the steepest launch that fits (the longest jump).
+		if (ceiling !== undefined) {
+			const vyMax = Math.sqrt(2 * GRAVITY * Math.max(0.02, ceiling - origin.y));
+			const flat = Math.hypot(v.x, v.z);
+			if (v.y > vyMax && vyMax < ARC_SPEED && flat > 1e-6) {
+				const k = Math.sqrt(ARC_SPEED * ARC_SPEED - vyMax * vyMax) / flat;
+				v.set(v.x * k, vyMax, v.z * k);
+			}
+		}
 		const pts = [origin.clone()];
 		let hit = null;
 		const a = this._a.copy(origin), b = this._b;
@@ -182,6 +193,7 @@ export class TeleportArc {
 			pts.push(hit ? hit.point.clone() : b.clone());
 			a.copy(b);
 		}
+		this.points = pts;
 		const valid = !!hit && (hit.valid ?? hit.normal.y > 0.7);
 		const color = valid ? OK_COLOR : BAD_COLOR;
 

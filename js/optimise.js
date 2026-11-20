@@ -34,6 +34,20 @@ function storeyOf(obj) {
 	return 0;
 }
 
+/**
+ * True for a door or window (Sweet Home 3D's doorOrWindow pieces), set by the
+ * SH3D builder on the piece's wrapper. Merged meshes carry it as
+ * userData.opening, so the teleport arc can pass through doorways even where
+ * furniture stops it (homes with several levels).
+ */
+export function isOpening(obj) {
+	for (let o = obj; o; o = o.parent) {
+		if (o.userData?.opening) return true;
+		if (o.userData?.piece) return o.userData.piece.kind === 'door';
+	}
+	return false;
+}
+
 /** Which layer an object of the loaded scene belongs to, from its top-level group name. */
 function layerOf(obj, root) {
 	let o = obj;
@@ -107,6 +121,7 @@ export function optimiseModel(root) {
 		sourceMeshes++;
 		const layer = layerOf(o, root);
 		const storey = storeyOf(o);
+		const opening = layer === 'main' && isOpening(o); // doors and windows merge on their own
 		const m = o.matrixWorld;
 		const mirrored = m.determinant() < 0;
 		const g0 = o.geometry;
@@ -123,9 +138,9 @@ export function optimiseModel(root) {
 			const g = extract(base, part.start, part.count, !!part.material.vertexColors);
 			g.applyMatrix4(m);
 			if (mirrored) flipWinding(g);
-			const key = `${layer}#${storey}#${materialKey(part.material)}`;
+			const key = `${layer}#${storey}#${opening ? 'opening' : ''}#${materialKey(part.material)}`;
 			let b = buckets.get(key);
-			if (!b) { b = { layer, storey, material: part.material, geoms: [] }; buckets.set(key, b); }
+			if (!b) { b = { layer, storey, opening, material: part.material, geoms: [] }; buckets.set(key, b); }
 			b.geoms.push(g);
 		}
 	});
@@ -149,6 +164,7 @@ export function optimiseModel(root) {
 		const mesh = new THREE.Mesh(merged, b.material);
 		mesh.matrixAutoUpdate = false;
 		mesh.userData.storey = b.storey;
+		if (b.opening) mesh.userData.opening = true;
 		layers[b.layer].add(mesh);
 		triangles += merged.index.count / 3;
 		drawCalls++;

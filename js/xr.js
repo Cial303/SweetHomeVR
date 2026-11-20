@@ -35,6 +35,7 @@ import { Panel, ControlsCard } from './panel.js';
 import { XRInput, TeleportArc, yawOf } from './xr-input.js';
 import { TIMES } from './lighting.js';
 import { WallCollider, SeeThrough, SEE_THROUGH_MAX } from './walls.js';
+import { isOpening } from './optimise.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
@@ -62,6 +63,9 @@ const ZOOM_SPEED = 1.2; // e-folds/s at full stick
 const WALK_SPEED = 0.75; // m/s at full stick
 const STEP = 0.6; // floor following: look this far above and below the feet
 const FADE_OUT = 0.1, FADE_IN = 0.15; // teleport fade, seconds
+// Highest the teleport arc may rise above your feet: under a door frame
+// (doors are about 2.0-2.1 m), so you can teleport through a doorway.
+const ARC_CEILING = 1.85;
 const MENU_DISTANCE = 0.75, MENU_DROP = 0.1, MENU_LEFT = 0.1; // summoned menu, relative to the eyes (controls card to its left)
 const MENU_WIDTH = 0.62; // metres
 // In the dollhouse the menu opens off to the left and further away, so it
@@ -847,7 +851,8 @@ export class XRExperience {
 	 * walk mode. One level: you stand on room floors and the ground only,
 	 * and the arc flies through furniture to the floor. More than one level
 	 * (or no rooms, as in OBJ and GLB files): you can stand on anything but
-	 * walls, so stairs work. Walls always stop the arc.
+	 * walls, doors and windows, so stairs work and the arc still passes
+	 * through doorways. Walls always stop the arc.
 	 */
 	targets() {
 		// Built once per model: this is asked for several times every frame.
@@ -857,7 +862,8 @@ export class XRExperience {
 		const L = { main: shown('main'), walls: shown('walls'), floors: shown('floors'), ground: shown('ground') };
 		const walls = L.walls;
 		const anywhere = this.model.multiLevel || L.floors.length === 0;
-		const walkable = [...L.floors, ...L.ground, ...(anywhere ? L.main : [])];
+		const furniture = L.main.filter((m) => !isOpening(m));
+		const walkable = [...L.floors, ...L.ground, ...(anywhere ? furniture : [])];
 		this._targets = {
 			pointable: [...L.main, ...walls, ...L.floors],
 			floors: [...L.floors, ...L.ground],
@@ -1144,7 +1150,9 @@ export class XRExperience {
 				c.ray.updateMatrixWorld(true);
 				const origin = new THREE.Vector3().setFromMatrixPosition(c.ray.matrixWorld);
 				const dir = new THREE.Vector3(0, 0, -1).transformDirection(c.ray.matrixWorld);
-				this.tele.result = this.arc.update(origin, dir, (a, b) => this.hitSegment(a, b, t));
+				// The arc stays low enough to pass through doorways (ARC_CEILING above your feet).
+				const ceiling = this.rig.position.y - this.lift + ARC_CEILING;
+				this.tele.result = this.arc.update(origin, dir, (a, b) => this.hitSegment(a, b, t), { ceiling });
 			}
 		}
 

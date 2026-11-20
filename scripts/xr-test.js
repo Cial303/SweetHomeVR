@@ -368,6 +368,15 @@ s = await state();
 check('trigger release teleports', land2 && Math.hypot(s.head[0] - land2[0], s.head[2] - land2[2]) < 0.05, `moved ${Math.hypot(s.head[0] - h0[0], s.head[2] - h0[2]).toFixed(2)} m`);
 await restRight(); await frames(3);
 
+// Aimed steeply up, the arc stays under door height (1.85 m above the feet), so it fits through doorways.
+await aim('right', R, [0.25, 3.5, -1.2]); await frames(3);
+await button('right', 'trigger', 1); await frames(6);
+s = await page.evaluate(() => { const x = window.__svr.xr; return { top: Math.max(...x.arc.points.map((p) => p.y)) - (x.rig.position.y - x.lift), reach: x.arc.points.length }; });
+await page.evaluate(() => { const x = window.__svr.xr; x.tele = null; x.arc.hide(); }); // cancel: no jump
+await button('right', 'trigger', 0); await frames(5);
+check('teleport arc stays under door height when aimed up', s.top < 1.86 && s.top > 1.5, `highest ${s.top.toFixed(2)} m above the feet`);
+await restRight(); await frames(3);
+
 // Furniture is not a floor: find a furniture top, check the arc flies
 // through it to the floor below, and that standing there uses that floor.
 s = await page.evaluate(async () => {
@@ -599,6 +608,15 @@ await frames(15);
 lv = await storeys();
 s = await state();
 check('walking shows every storey and hides the figure', s.mode === 'walk' && lv.hidden.length === 0 && !s.figure, JSON.stringify({ mode: s.mode, hidden: lv.hidden, figure: s.figure }));
+{
+	// Several levels: furniture stops the arc (stairs can be stood on), but doors and windows don't.
+	const o = await page.evaluate(() => {
+		const x = window.__svr.xr, t = x.targets(), main = x.model.layers.main.children;
+		const openings = main.filter((m) => m.userData.opening);
+		return { openings: openings.length, inSolid: openings.filter((m) => t.solid.includes(m)).length, furnitureSolid: t.solid.some((m) => main.includes(m) && !m.userData.opening) };
+	});
+	check('several levels: the arc passes doors and windows, not other furniture', o.openings > 0 && o.inSolid === 0 && o.furnitureSolid, JSON.stringify(o));
+}
 await shot('example-walk-depth');
 await page.evaluate(() => window.__svr.xr.end());
 await frames(5);

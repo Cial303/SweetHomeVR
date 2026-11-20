@@ -97,7 +97,7 @@ The menu is a list of settings: **switches** for what is on or off (Shadows, Dep
 - **Solid walls** (menu, off by default): walls stop you, whether you use the stick, pull yourself along or walk for real in your room, and you slide along them. Only walls: furniture, doors and windows stay walk-through, so doorways and stairs work. (OBJ and GLB files have no separate walls, so the switch is greyed out for them.)
 - **Hold a grip** (the button on the side of the handle) and move your hand to pull yourself along, as if grabbing the room.
 - **Right stick** left/right turns in steps (15°, 30° or 45°, set in the menu).
-- **Right stick forward**, or **hold a trigger**, and aim: a blue ring shows where you'll land (red on a wall). Let go to jump there.
+- **Right stick forward**, or **hold a trigger**, and aim: a blue ring shows where you'll land (red on a wall). The arc stays low enough to pass through doorways. Let go to jump there.
 - **B** or **Y** goes back to the dollhouse.
 - Menu: **Time of day**, **Shadows**, **Depth**, **Ceilings**, **Solid walls**, **See-through**, **Turn**, **Height** (yours, 1.4, 1.7 or 2.0 m), **View**, and at the bottom **Back to the dollhouse** next to **Exit VR**.
 
