@@ -2,7 +2,7 @@
 
 A WebXR viewer for [Sweet Home 3D](https://www.sweethome3d.com/) homes on Meta Quest. Open a `.sh3d` file directly (no export step), look at it as a dollhouse, then walk through it at real scale. It also opens OBJ (plain, or zipped with MTL and textures) and GLB.
 
-**Try it: [cial303.github.io/SweetHomeVR](https://cial303.github.io/SweetHomeVR/)** (press *Try the example home* if you have no file to hand).
+**Try it: [marcalprats.github.io/SweetHomeVR](https://marcalprats.github.io/SweetHomeVR/)** (press *Try the example home* if you have no file to hand).
 
 It runs in the Meta Quest Browser: no app store, no developer mode, no sideloading. The same page works on a desktop browser as a 2D preview, so you can check a file before putting the headset on.
 
@@ -56,7 +56,7 @@ Google only gives shared files to other websites through its Drive API, which ne
 2. **APIs & Services → Library**: find **Google Drive API** and press **Enable**.
 3. **APIs & Services → Credentials → Create credentials → API key**.
 4. Edit the key:
-   - **Application restrictions → Websites**: add your site, e.g. `https://cial303.github.io/*`. Add `http://localhost:*/*` too, to test locally.
+   - **Application restrictions → Websites**: add your site, e.g. `https://marcalprats.github.io/*`. Add `http://localhost:*/*` too, to test locally.
    - **API restrictions → Restrict key → Google Drive API** only.
    - Save.
 5. Put the key in `config.js` as `googleApiKey`, then commit and push.
@@ -144,7 +144,7 @@ Without a key the button is simply hidden. The Chooser script is the only file l
 
 ## Feedback
 
-Problems and ideas are welcome as [issues](https://github.com/Cial303/SweetHomeVR/issues). It helps to say:
+Problems and ideas are welcome as [issues](https://github.com/marcalprats/SweetHomeVR/issues). It helps to say:
 
 - the headset and its browser version (or the desktop browser);
 - what you did and what you expected;
@@ -158,7 +158,7 @@ Things nobody has been able to check yet: a real Quest 3, 3S, Pro or Quest 1, Sa
 The app is plain ES modules served as static files: there is no build step and nothing to install to run it. Clone it and the Node tests already work (Node 24; `nvm use` picks it up):
 
 ```bash
-git clone https://github.com/Cial303/SweetHomeVR.git
+git clone https://github.com/marcalprats/SweetHomeVR.git
 cd SweetHomeVR
 npm test               # parser, lighting, depth-shading and safety tests: no install, no downloads
 npm run serve          # the app at http://localhost:8123/ (2D preview; WebXR on a headset needs https)
