@@ -153,7 +153,7 @@ await frames(10);
 let s = await state();
 check('enters the VR dollhouse', s.presenting && s.mode === 'dollhouse' && s.showroom, JSON.stringify({ mode: s.mode, session: s.session }));
 check('dollhouse: eyes where a 2 m person\'s would be (1.89 m)', Math.abs(s.head[1] - 1.89) < 0.005 && Math.abs(s.rig[1] - 0.29) < 0.005, `eyes ${s.head[1].toFixed(3)} m, raised ${s.rig[1].toFixed(3)} m`);
-check('an orb on each hand', s.orbs === 2);
+check('an orb on each wrist', s.orbs === 2);
 {
 	// No two large surfaces at the same height: the model's floor is clear of the plinth top.
 	const gap = await page.evaluate(() => { const x = window.__svr.xr, V = x.rig.position.constructor; const floor = x.centerer.localToWorld(new V(0, x.model.bounds.min.y, 0)).y;
@@ -161,7 +161,24 @@ check('an orb on each hand', s.orbs === 2);
 	check('the model\'s floor is clear of the plinth top (no flicker)', gap.gap > 0.003 && gap.gap < 0.006 && gap.near === 0.05 && gap.far === 300, JSON.stringify(gap));
 }
 check('scale figure stands by the dollhouse at the model\'s scale', s.figure && Math.abs(s.figureHeight - 1.75 * s.anchorScale) < 1e-3, `figure ${s.figureHeight.toFixed(3)} m, scale ${s.anchorScale.toFixed(3)}`);
-check('menu opens once on entry', s.menu === 'dollhouse');
+{
+	// A welcome card above the model says how to open the menu (it no longer opens by itself).
+	const w = await page.evaluate(() => {
+		const x = window.__svr.xr, V = x.rig.position.constructor, card = x.welcome.mesh;
+		const p = card.getWorldPosition(new V()), top = x.centerer.localToWorld(new V(0, x.model.bounds.max.y, 0)).y;
+		return { shown: card.visible && card.parent === x.stage, above: +(p.y - top).toFixed(2), menu: x.menu !== null, title: x.welcome.title, first: x.welcome.lines[0].text };
+	});
+	check('welcome card above the model, menu closed', w.shown && w.above > 0.1 && !w.menu && /wrist/i.test(w.first), JSON.stringify(w));
+	await shot('welcome-card');
+	// Touch the left wrist with the right controller: the menu opens and the card goes.
+	await aim('left', [-0.12, 1.2, -0.4], [0.1, 0.9, -1.2]); await frames(3);
+	const wrist = await toLocal(await orbPoint('left'));
+	await aim('right', wrist, [wrist[0], wrist[1], wrist[2] - 1]); await frames(5);
+	s = await state();
+	const gone = await page.evaluate(() => !window.__svr.xr.welcome.mesh.visible);
+	check('touching a wrist opens the menu and the welcome card goes', s.menu === 'dollhouse' && gone);
+	await restRight(); await restLeft(); await frames(3);
+}
 {
 	// The dollhouse menu opens to the left of where you look, out of the model's way.
 	const m = await page.evaluate(() => {
@@ -182,7 +199,7 @@ check('menu opens once on entry', s.menu === 'dollhouse');
 	});
 	const want = { shadows: 'switch', depth: 'switch', ceilings: 'switch', light: 'choice', view: 'choice', seethrough: 'slider', exit: 'button' };
 	const ok = Object.entries(want).every(([id, t]) => kinds.doll[id] === t && kinds.walk[id] === t)
-		&& kinds.doll.figure === 'switch' && kinds.doll.levels === 'choice' && kinds.walk.solid === 'switch' && kinds.walk.turn === 'choice' && kinds.walk.height === 'choice';
+		&& kinds.doll.figure === 'switch' && kinds.doll.levels === 'dropdown' && kinds.doll.photo === 'button' && kinds.walk.photo === 'button' && kinds.walk.solid === 'switch' && kinds.walk.turn === 'choice' && kinds.walk.height === 'choice';
 	check('menus use switches, choices, a slider and buttons, and fit in view', ok && Math.max(...kinds.heights) < 0.7, JSON.stringify({ heights: kinds.heights, width: kinds.width }));
 }
 await shot('dollhouse-menu');
@@ -538,7 +555,7 @@ await frames(30);
 s = await state();
 check('re-entering puts the plinth in front of you', Math.abs(s.stage[0] - 1.2) < 0.02 && Math.abs(s.stage[2] - 0.8) < 0.02 && Math.abs(s.stage[3] - 0.9) < 0.02,
 	`stage ${s.stage.map((v) => v.toFixed(2))}`);
-check('menu does not reopen on re-entry', s.menu === null);
+check('menu does not open by itself on re-entry; the welcome card is back', s.menu === null && await page.evaluate(() => window.__svr.xr.welcome.mesh.visible));
 check('sitting down: the eyes are still at 1.89 m', Math.abs(s.head[1] - 1.89) < 0.005 && Math.abs(s.rig[1] - 0.74) < 0.005, `eyes ${s.head[1].toFixed(3)} m, raised ${s.rig[1].toFixed(3)} m`);
 // Stand up and press Recentre: measured again.
 await page.evaluate(() => window.__device.position.set(1.2, 1.75, 0.8));
@@ -569,9 +586,12 @@ const storeys = () => page.evaluate(() => {
 		pointable: x.targets().pointable.every((m) => m.visible), lamps: x.model.lamps?.children.length ?? 0, lampsOn: !!x.model.lamps?.visible, multi: x.model.multiLevel };
 });
 let lv = await storeys();
-check('example home: two storeys, all shown', lv.count === 2 && lv.multi && lv.hidden.length === 0 && lv.level === 1 && lv.levelOptions === '1 All (2)', JSON.stringify(lv));
+check('example home: two storeys, all shown', lv.count === 2 && lv.multi && lv.hidden.length === 0 && lv.level === 1 && lv.levelOptions === 'All levels (2) Up to Ground floor', JSON.stringify(lv));
 await click('right', 'a-button');
 await shot('example-menu');
+await clickMenu('levels'); // opens the list
+check('Levels: a click opens the dropdown list', await page.evaluate(() => window.__svr.xr.menu?.open === 'levels'));
+await shot('example-levels-dropdown');
 await clickMenu('levels', 0);
 await frames(5);
 lv = await storeys();
@@ -584,10 +604,27 @@ await click('right', 'b-button');
 await shot('example-ground-floor-night');
 await page.evaluate(() => window.__svr.lighting.setTime('morning'));
 await click('right', 'a-button');
+await clickMenu('levels');
 await clickMenu('levels', 1);
 await frames(5);
 lv = await storeys();
 check('Levels: All shows every storey again', lv.hidden.length === 0 && lv.level === 1 && !lv.lampsOn, JSON.stringify(lv));
+{
+	// Photo: the menu closes and a JPEG of the view (1920 x 1080) is saved as a download.
+	const download = page.waitForEvent('download', { timeout: 20000 }).catch(() => null);
+	await clickMenu('photo');
+	const d = await download;
+	const file = path.join(out, 'xr-photo.jpg');
+	if (d) await d.saveAs(file);
+	const jpeg = d ? fs.readFileSync(file) : null;
+	let size = null; // width x height from the JPEG's frame header
+	for (let i = 2; jpeg && i < jpeg.length - 9; i++) if (jpeg[i] === 0xff && jpeg[i + 1] >= 0xc0 && jpeg[i + 1] <= 0xc2) { size = [jpeg.readUInt16BE(i + 7), jpeg.readUInt16BE(i + 5)]; break; }
+	await frames(5);
+	const fx = await page.evaluate(() => ({ menu: window.__svr.xr.menu !== null, note: window.__svr.xr.photoNote.mesh.visible, title: window.__svr.xr.photoNote.title }));
+	check('Photo saves the view as a 1920 x 1080 JPEG and says so', d && /^Sweet Home VR \d{4}-\d\d-\d\d [\d.]+\.jpg$/.test(d.suggestedFilename()) && size?.join('x') === '1920x1080' && jpeg.length > 30000 && !fx.menu && fx.note && fx.title === 'Photo saved',
+		JSON.stringify({ name: d?.suggestedFilename(), size, bytes: jpeg?.length, ...fx }));
+	await click('right', 'a-button');
+}
 await clickMenu('figure');
 await frames(3);
 check('Figure can be switched off', !(await state()).figure);
@@ -602,6 +639,7 @@ await page.waitForFunction(() => window.__svr.depth.state === 'ready', null, { t
 await frames(5);
 let dp = await depth();
 check('Depth shading is prepared and shown in the headset', dp.on && dp.state === 'ready' && dp.uniform === 1 && dp.switched === true && dp.label === 'Depth', JSON.stringify(dp));
+await clickMenu('levels');
 await clickMenu('levels', 0); // ground floor only, then walk in: every storey comes back
 await clickMenu('walk');
 await frames(15);

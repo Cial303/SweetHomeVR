@@ -125,6 +125,12 @@ export function parseHome(xmlText) {
 	// Storeys: the distinct elevations of the viewable levels, lowest first.
 	// (Sweet Home 3D allows several levels at one elevation; they are one storey.)
 	home.storeys = [...new Set([...home.levels.values()].filter((l) => l.viewable).map((l) => l.elevation))].sort((a, b) => a - b);
+	// Their names, for the headset's level picker: the names of the viewable
+	// levels at each elevation ("" when unnamed). Shown as plain canvas text.
+	home.storeyNames = home.storeys.map((e) => [...home.levels.values()]
+		.filter((l) => l.viewable && l.elevation === e && l.name)
+		.sort((a, b) => a.elevationIndex - b.elevationIndex)
+		.map((l) => l.name.slice(0, 40)).join(' / '));
 
 	const levelOf = (id) => (id ? home.levels.get(id) || null : null);
 	const levelHidden = (id) => { const l = levelOf(id); return l ? !l.viewable : false; };
@@ -398,6 +404,7 @@ export async function buildHome(home, opts = {}) {
 		observer: home.observer,
 		lamps,
 		storeys: storeys.length,
+		storeyNames: home.storeyNames ?? [],
 		stats: {
 			walls: home.walls.length,
 			rooms: home.rooms.length,

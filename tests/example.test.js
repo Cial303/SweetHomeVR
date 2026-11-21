@@ -30,6 +30,7 @@ test('example home: two storeys, lamps, stairs up to the first floor', async () 
 	const { home, built } = await build();
 	assert.deepEqual(home.storeys, [0, 262]);
 	assert.equal(built.storeys, 2);
+	assert.deepEqual(built.storeyNames, ['Ground floor', 'First floor'], 'level names, for the Levels dropdown in the headset');
 	assert.deepEqual({ walls: built.stats.walls, rooms: built.stats.rooms, doors: built.stats.doorsAndWindows, openings: built.stats.openings, missing: built.stats.missingModels },
 		{ walls: 11, rooms: 6, doors: 14, openings: 14, missing: 0 });
 	// Lamps: one bulb per light piece, inside the house, on the right storey.

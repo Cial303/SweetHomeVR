@@ -10,10 +10,15 @@
 //           (‹ value ›).
 //   slider  a value from 0 to 1 (See-through): press the trigger on the
 //           track and drag.
+//   dropdown  a list that can be long (Levels: a home can have many): the
+//           cell shows the current option; a click opens the list over the
+//           panel, a click on an option picks it, a click anywhere else on
+//           the panel closes it.
 // A cell can be disabled, with a short note in place of its control (Levels
 // in a one-storey home: "One level").
-// hitTest() maps a ray hit (UV) to { id, value }: the option of a choice, or
-// 0..1 along a slider.
+// hitTest() maps a ray hit (UV) to a target; press(target) returns the action
+// to run ({ id, value }: the option of a choice or dropdown, 0..1 along a
+// slider) or null when the click only opened or closed a dropdown.
 
 import * as THREE from 'three';
 
@@ -31,6 +36,7 @@ const COLOURS = {
 	off: '#e2e6ea', offText: '#9aa3ac',
 };
 const SWITCH_W = 96, SWITCH_H = 52;
+const OPTION_H = 64, OPTION_MIN_H = 40; // dropdown list rows (shrunk to fit a long list)
 
 export class Panel {
 	/**
@@ -39,6 +45,7 @@ export class Panel {
 	 *              { type: 'switch', id, label, value: bool }
 	 *              { type: 'choice', id, label, options: [{ value, label }], value }
 	 *              { type: 'slider', id, label, value: 0..1, format(value) -> text }
+	 *              { type: 'dropdown', id, label, options: [{ value, label }], value }
 	 *              any cell: disabled, note (text shown instead of the control when disabled)
 	 * @param opts  { title, hint (small text at the bottom), width (m), pxPerM (canvas pixels per metre) }
 	 */
@@ -48,6 +55,7 @@ export class Panel {
 		this.title = title;
 		this.hint = hint;
 		this.hover = null; // key of the hovered target
+		this.open = null; // id of the dropdown whose list is open
 		const wPx = Math.round(width * pxPerM);
 		this.size = { w: wPx, h: 0 };
 		this.boxes = this.layout();
@@ -92,13 +100,28 @@ export class Panel {
 		return { x, y: b.y + 10, w: b.x + b.w - 12 - x, h: b.h - 20 };
 	}
 
-	/** Clickable targets: { id, value?, slider?, x, y, w, h } in canvas pixels. */
+	/**
+	 * Clickable targets: { id, value?, slider?, toggle?, dismiss?, x, y, w, h }
+	 * in canvas pixels. While a dropdown is open, only its options are (and
+	 * the rest of the panel, which closes it).
+	 */
 	rects() {
 		const out = [];
+		if (this.open) {
+			const list = this.list();
+			if (list) {
+				for (const o of list.options) out.push({ id: this.open, value: o.value, x: o.x, y: o.y, w: o.w, h: o.h });
+				out.push({ id: this.open, dismiss: true, x: 0, y: 0, w: this.size.w, h: this.size.h });
+				return out;
+			}
+		}
 		for (const b of this.boxes) {
 			const c = b.cell;
 			if (c.disabled) continue;
-			if (c.type === 'choice') {
+			if (c.type === 'dropdown') {
+				const a = this.controlArea(b);
+				out.push({ id: c.id, toggle: true, x: a.x, y: b.y, w: a.w + 12, h: b.h });
+			} else if (c.type === 'choice') {
 				for (const s of this.segments(b)) if (s.value !== undefined) out.push({ id: c.id, value: s.value, x: s.x, y: s.y, w: s.w, h: s.h });
 			} else if (c.type === 'slider') {
 				const t = this.track(b);
@@ -125,6 +148,26 @@ export class Panel {
 		}
 		const w = (a.w - (opts.length - 1) * gap) / Math.max(1, opts.length);
 		return opts.map((o, i) => ({ x: a.x + i * (w + gap), y: a.y, w, h: a.h, label: o.label, value: o.value, selected: o.value === c.value }));
+	}
+
+	/**
+	 * The open dropdown's list: as wide as its control, starting level with
+	 * the cell and growing upwards when there is no room below; rows shrink
+	 * so a long list still fits on the panel.
+	 */
+	list() {
+		const b = this.boxes.find((x) => x.cell.id === this.open);
+		if (!b) return null;
+		const opts = b.cell.options ?? [];
+		const room = this.size.h - 2 * PAD - 16;
+		const rowH = Math.max(OPTION_MIN_H, Math.min(OPTION_H, Math.floor(room / Math.max(1, opts.length))));
+		const h = opts.length * rowH + 16;
+		const a = this.controlArea(b);
+		const y = THREE.MathUtils.clamp(b.y + b.h - h, PAD, Math.max(PAD, this.size.h - PAD - h)); // its bottom at the cell's bottom
+		return {
+			x: a.x - 8, y, w: a.w + 16, h,
+			options: opts.map((o, i) => ({ ...o, x: a.x, y: y + 8 + i * rowH, w: a.w, h: rowH - 4, selected: o.value === b.cell.value })),
+		};
 	}
 
 	/** A slider's track (the line the knob runs along), leaving room for the value on the right. */
@@ -155,7 +198,54 @@ export class Panel {
 			ctx.fillText(this.hint, w / 2, h - PAD - HINT_H / 2 + 8);
 			ctx.textAlign = 'left';
 		}
+		if (this.open) this.drawList(ctx);
 		this.texture.needsUpdate = true;
+	}
+
+	/** The open dropdown's list over a dimmed panel. */
+	drawList(ctx) {
+		const list = this.list();
+		if (!list) return;
+		roundRect(ctx, 0, 0, this.size.w, this.size.h, 36);
+		ctx.fillStyle = 'rgba(29,35,41,0.35)';
+		ctx.fill();
+		roundRect(ctx, list.x, list.y, list.w, list.h, 18);
+		ctx.fillStyle = COLOURS.cell;
+		ctx.fill();
+		ctx.lineWidth = 3;
+		ctx.strokeStyle = COLOURS.hoverEdge;
+		ctx.stroke();
+		for (const o of list.options) {
+			const hot = this.hover === `${this.open}|${o.value}`;
+			roundRect(ctx, o.x, o.y, o.w, o.h, 12);
+			ctx.fillStyle = o.selected ? COLOURS.accent : hot ? COLOURS.hover : COLOURS.cell;
+			ctx.fill();
+			if (hot && !o.selected) { ctx.lineWidth = 4; ctx.strokeStyle = COLOURS.hoverEdge; ctx.stroke(); }
+			ctx.fillStyle = o.selected ? COLOURS.accentText : COLOURS.text;
+			fitFont(ctx, o.label, o.w - 40, Math.min(30, o.h - 14), 16, o.selected ? 600 : 500);
+			ctx.fillText(o.label, o.x + 20, o.y + o.h / 2 + 2);
+		}
+	}
+
+	drawDropdown(ctx, b, hot) {
+		const c = b.cell, a = this.controlArea(b);
+		roundRect(ctx, a.x, a.y, a.w, a.h, 14);
+		ctx.fillStyle = hot ? COLOURS.hover : COLOURS.segment;
+		ctx.fill();
+		ctx.lineWidth = hot ? 4 : 2;
+		ctx.strokeStyle = hot ? COLOURS.hoverEdge : COLOURS.edge;
+		ctx.stroke();
+		const current = (c.options ?? []).find((o) => o.value === c.value)?.label ?? '';
+		ctx.fillStyle = COLOURS.text;
+		fitFont(ctx, current, a.w - 80, 30, 16, 600);
+		ctx.fillText(current, a.x + 18, a.y + a.h / 2 + 2);
+		// The arrow that says "this opens a list".
+		const ax = a.x + a.w - 34, ay = a.y + a.h / 2;
+		ctx.beginPath();
+		ctx.moveTo(ax - 11, ay - 6); ctx.lineTo(ax + 11, ay - 6); ctx.lineTo(ax, ay + 8);
+		ctx.closePath();
+		ctx.fillStyle = COLOURS.soft;
+		ctx.fill();
 	}
 
 	drawCell(ctx, b) {
@@ -173,8 +263,12 @@ export class Panel {
 			}
 			ctx.fillStyle = b.primary ? COLOURS.primaryText : c.disabled ? COLOURS.offText : COLOURS.text;
 			ctx.textAlign = 'center';
-			fitFont(ctx, c.label, b.w - 32, b.primary ? 46 : 36, 22, b.primary ? 600 : 500);
-			ctx.fillText(c.label, b.x + b.w / 2, b.y + b.h / 2 + 2);
+			const iconW = c.icon === 'camera' ? 58 : 0; // a camera drawn before the label
+			fitFont(ctx, c.label, b.w - 32 - iconW, b.primary ? 46 : 36, 22, b.primary ? 600 : 500);
+			const tw = ctx.measureText(c.label).width;
+			const cx = b.x + b.w / 2 + iconW / 2, cy = b.y + b.h / 2;
+			if (iconW) drawCamera(ctx, cx - tw / 2 - iconW / 2 - 4, cy, c.disabled ? COLOURS.offText : COLOURS.text);
+			ctx.fillText(c.label, cx, cy + 2);
 			ctx.textAlign = 'left';
 			return;
 		}
@@ -202,6 +296,7 @@ export class Panel {
 		if (c.type === 'switch') this.drawSwitch(ctx, b);
 		else if (c.type === 'choice') this.drawChoice(ctx, b);
 		else if (c.type === 'slider') this.drawSlider(ctx, b, hot);
+		else if (c.type === 'dropdown') this.drawDropdown(ctx, b, hot && !this.open);
 	}
 
 	drawSwitch(ctx, b) {
@@ -261,7 +356,30 @@ export class Panel {
 		const r = this.rects().find((t) => x >= t.x && x <= t.x + t.w && y >= t.y && y <= t.y + t.h);
 		if (!r) return null;
 		if (r.slider) return { id: r.id, slider: true, value: this.sliderAt(r.track, uv) };
+		if (r.toggle || r.dismiss) return { id: r.id, toggle: !!r.toggle, dismiss: !!r.dismiss };
 		return r.value !== undefined ? { id: r.id, value: r.value } : { id: r.id };
+	}
+
+	/**
+	 * A click on a target: opens or closes a dropdown (returns null), picks a
+	 * dropdown option (closes the list; returns { id, value }), or returns the
+	 * target itself as the action to run.
+	 */
+	press(target) {
+		if (!target) return null;
+		if (target.toggle) { this.open = this.open === target.id ? null : target.id; this.hover = null; this.draw(); return null; }
+		if (target.dismiss) { this.closeDropdown(); return null; }
+		if (this.open) {
+			this.closeDropdown();
+			return target.value === this.cells.get(target.id)?.value ? null : target;
+		}
+		return target;
+	}
+
+	closeDropdown() {
+		if (!this.open) return;
+		this.open = null;
+		this.draw();
 	}
 
 	/** While dragging a slider: its value under a ray hit anywhere on the panel. */
@@ -276,7 +394,7 @@ export class Panel {
 
 	/** Highlights the target under a laser (a hitTest() result, or null). */
 	setHover(target) {
-		const key = target ? `${target.id}|${target.slider ? '' : target.value ?? ''}` : null;
+		const key = target && !target.dismiss ? `${target.id}|${target.slider || target.toggle ? '' : target.value ?? ''}` : null;
 		if (key === this.hover) return;
 		this.hover = key;
 		this.draw();
@@ -466,4 +584,87 @@ export class ControlsCard {
 			y += 68;
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Welcome card: floats above the dollhouse when you enter VR and says how to
+// open the menu, until you open it. Lines are { key?, text, small? }; a key
+// draws a coloured badge (like the controls card) before the text.
+// ---------------------------------------------------------------------------
+
+const WELCOME_W = 1300;
+
+export class WelcomeCard {
+	constructor(title, lines, { width = 0.62 } = {}) {
+		this.title = title;
+		this.lines = lines;
+		const h = 150 + lines.reduce((n, l) => n + (l.small ? 64 : 92), 0) + 40;
+		this.size = { w: WELCOME_W, h };
+		this.canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+		if (this.canvas) { this.canvas.width = WELCOME_W; this.canvas.height = h; }
+		this.texture = this.canvas ? new THREE.CanvasTexture(this.canvas) : null;
+		if (this.texture) { this.texture.colorSpace = THREE.SRGBColorSpace; this.texture.anisotropy = 4; }
+		// Drawn over the model, so a zoomed-in home never hides it.
+		this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, width * h / WELCOME_W),
+			new THREE.MeshBasicMaterial({ map: this.texture, transparent: true, toneMapped: false, depthTest: false }));
+		this.mesh.name = 'welcome-card';
+		this.mesh.renderOrder = 11;
+		this.draw();
+	}
+
+	draw() {
+		if (!this.canvas) return;
+		const ctx = this.canvas.getContext('2d');
+		const { w, h } = this.size;
+		ctx.clearRect(0, 0, w, h);
+		roundRect(ctx, 0, 0, w, h, 48);
+		ctx.fillStyle = 'rgba(255,255,255,0.96)';
+		ctx.fill();
+		ctx.lineWidth = 6;
+		ctx.strokeStyle = BADGE.orb.fill;
+		ctx.stroke();
+		ctx.textBaseline = 'middle';
+		ctx.fillStyle = '#1d2329';
+		ctx.font = `700 64px ${FONT}`;
+		ctx.fillText(this.title, 60, 92);
+		let y = 150;
+		for (const l of this.lines) {
+			const rowH = l.small ? 64 : 92;
+			let x = 60;
+			if (l.key) {
+				const b = BADGE[l.kind] || BADGE.orb;
+				ctx.font = `700 34px ${FONT}`;
+				const bw = Math.max(80, ctx.measureText(l.key).width + 40);
+				roundRect(ctx, x, y + rowH / 2 - 30, bw, 60, 16);
+				ctx.fillStyle = b.fill; ctx.fill();
+				ctx.fillStyle = b.text;
+				ctx.textAlign = 'center';
+				ctx.fillText(l.key, x + bw / 2, y + rowH / 2 + 1);
+				ctx.textAlign = 'left';
+				x += bw + 28;
+			}
+			ctx.fillStyle = l.small ? '#5d6873' : '#1d2329';
+			let px = l.small ? 34 : 46;
+			do ctx.font = `${l.small ? 400 : 500} ${px}px ${FONT}`;
+			while (ctx.measureText(l.text).width > w - x - 60 && --px > 20);
+			ctx.fillText(l.text, x, y + rowH / 2 + 2);
+			y += rowH;
+		}
+		this.texture.needsUpdate = true;
+	}
+}
+
+/** A small camera (for the Photo button), centred on (x, y). */
+function drawCamera(ctx, x, y, colour) {
+	ctx.save();
+	ctx.fillStyle = colour;
+	roundRect(ctx, x - 22, y - 13, 44, 30, 7); // body
+	ctx.fill();
+	roundRect(ctx, x - 9, y - 19, 18, 8, 3); // viewfinder bump
+	ctx.fill();
+	ctx.fillStyle = '#ffffff';
+	ctx.beginPath(); ctx.arc(x, y + 2, 9, 0, Math.PI * 2); ctx.fill(); // lens
+	ctx.fillStyle = colour;
+	ctx.beginPath(); ctx.arc(x, y + 2, 5, 0, Math.PI * 2); ctx.fill();
+	ctx.restore();
 }

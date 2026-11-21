@@ -31,11 +31,12 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Panel, ControlsCard } from './panel.js';
+import { Panel, ControlsCard, WelcomeCard } from './panel.js';
 import { XRInput, TeleportArc, yawOf } from './xr-input.js';
 import { TIMES } from './lighting.js';
 import { WallCollider, SeeThrough, SEE_THROUGH_MAX } from './walls.js';
 import { isOpening } from './optimise.js';
+import { takePhoto, photoName, saveFile } from './photo.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
@@ -76,7 +77,7 @@ const TURNS = [15, 30, 45]; // snap turn options, degrees
 const HEIGHTS = [0, 1.4, 1.7, 2.0]; // person height options, metres (0 = your own)
 const EYE_BELOW_TOP = 0.11; // eyes are about this far below the top of the head
 const ORB_TOUCH = 0.08, ORB_RELEASE = 0.14; // touching an orb with the other hand
-const HINT = 'A / X, or an orb on your hands';
+const HINT = 'Touch a wrist with the other hand, or press A / X';
 const FIGURE_HEIGHT = 1.75; // the scale figure beside the dollhouse, metres at the model's scale
 const FIGURE_GAP = 0.45; // how far in front of the home it stands, metres at the model's scale
 const KEYS = { turn: 'svr.snapAngle', height: 'svr.height', view: 'svr.view', figure: 'svr.figure', solid: 'svr.solidWalls', seeThrough: 'svr.seeThrough' };
@@ -119,7 +120,7 @@ export class XRExperience {
 		this.seeThrough = new SeeThrough();
 		this.drag = null; // a slider being dragged: { c, id }
 		this.maxStorey = null; // dollhouse: highest storey shown (null = all)
-		this.menuShownOnce = false;
+		this.welcomeOn = false; // the welcome card above the dollhouse, until the menu is first opened
 		this.pendingRecentre = false;
 		this.raycaster = new THREE.Raycaster();
 		this.raycaster.firstHitOnly = true;
@@ -133,6 +134,8 @@ export class XRExperience {
 		this.buildMenus();
 		this.buildOrbs();
 		this.buildFade();
+		this.buildWelcome();
+		this.buildPhotoFeedback();
 		this.arc = new TeleportArc(scene);
 	}
 
@@ -244,12 +247,12 @@ export class XRExperience {
 		const exit = [{ id: 'exit', label: 'Exit VR', primary: true }];
 		this.menus = {
 			dollhouse: new Panel([
-				[{ id: 'walk', label: 'Walk in' }, { id: 'recentre', label: 'Recentre' }],
+				[{ id: 'walk', label: 'Walk in' }, { id: 'recentre', label: 'Recentre' }, { id: 'photo', label: 'Photo', icon: 'camera' }],
 				light,
 				[sw('shadows', 'Shadows'), sw('depth', 'Depth')],
 				[sw('ceilings', 'Ceilings'), sw('figure', 'Figure')],
 				seeThrough,
-				[{ type: 'choice', id: 'levels', label: 'Up to level', options: [], disabled: true, note: 'One level' }],
+				[{ type: 'dropdown', id: 'levels', label: 'Levels', options: [], disabled: true, note: 'One level' }],
 				view,
 				exit,
 			], opts('Dollhouse')),
@@ -261,8 +264,8 @@ export class XRExperience {
 				[{ type: 'choice', id: 'turn', label: 'Turn', options: TURNS.map((t) => ({ value: t, label: `${t}°` })), value: 30 }],
 				[{ type: 'choice', id: 'height', label: 'Height', options: HEIGHTS.map((h) => ({ value: h, label: h ? `${h.toFixed(1)} m` : 'Yours' })), value: 0 }],
 				view,
-				// The two ways out, side by side at the bottom (at the user's request).
-				[{ id: 'dollhouse', label: 'Back to the dollhouse' }, ...exit],
+				// The two ways out, side by side at the bottom (at the user's request), after Photo.
+				[{ id: 'photo', label: 'Photo', icon: 'camera' }, { id: 'dollhouse', label: 'Back to the dollhouse' }, ...exit],
 			], opts('Walking')),
 		};
 		const either = (btn) => [
@@ -271,13 +274,14 @@ export class XRExperience {
 			{ kind: 'grip', key: 'Grip', text: 'Hold to move the model' },
 			{ kind: 'button', key: btn[0], text: 'Menu' },
 			{ kind: 'button', key: btn[1], text: 'Close the menu' },
-			{ kind: 'orb', key: 'Orb', text: 'Point or touch: menu' },
+			{ kind: 'orb', key: 'Wrist', text: 'Touch with the other hand: menu' },
 		];
-		// Horizon OS screenshot: hold the Meta button (right controller) and pull a trigger.
-		const footer = { footer: { key: 'Screenshot', lines: [
-			'Close this menu, then hold the Meta button',
-			'(right hand) and pull a trigger.',
-			'Pictures are in the headset\'s Files app.',
+		// Pictures: the menu's Photo button (the Quest's own screenshot, Meta
+		// button + trigger, also sends the trigger here and jumps you).
+		const footer = { footer: { key: 'Photo', lines: [
+			'The Photo button saves what you see,',
+			'without this menu, to the headset\'s',
+			'Files app, in Downloads.',
 		] } };
 		const cards = {
 			dollhouse: new ControlsCard('Controls: dollhouse', { left: either('XY'), right: either('AB') }, footer),
@@ -288,7 +292,7 @@ export class XRExperience {
 					{ kind: 'grip', key: 'Grip', text: 'Hold and pull: move' },
 					{ kind: 'button', key: 'X', text: 'Menu' },
 					{ kind: 'button', key: 'Y', text: 'Back to the dollhouse' },
-					{ kind: 'orb', key: 'Orb', text: 'Point or touch: menu' },
+					{ kind: 'orb', key: 'Wrist', text: 'Touch with the other hand: menu' },
 				],
 				right: [
 					{ kind: 'stick', key: 'Stick ↔', text: 'Turn' },
@@ -297,7 +301,7 @@ export class XRExperience {
 					{ kind: 'grip', key: 'Grip', text: 'Hold and pull: move' },
 					{ kind: 'button', key: 'A', text: 'Menu' },
 					{ kind: 'button', key: 'B', text: 'Back to the dollhouse' },
-					{ kind: 'orb', key: 'Orb', text: 'Point or touch: menu' },
+					{ kind: 'orb', key: 'Wrist', text: 'Touch with the other hand: menu' },
 				],
 			}, footer),
 		};
@@ -322,6 +326,97 @@ export class XRExperience {
 	}
 
 	/** Black sphere around the head for the teleport fade. */
+	/**
+	 * Welcome card above the dollhouse (replaces the menu opening by itself):
+	 * how to open the menu, shown on every entry until the menu is opened.
+	 */
+	buildWelcome() {
+		this.welcome = new WelcomeCard('Welcome', [
+			{ key: 'Wrist', kind: 'orb', text: 'Touch a wrist with the other hand: menu' },
+			{ key: 'Trigger', kind: 'trigger', text: 'Point at the home and pull: step inside' },
+			{ small: true, text: 'Or press A or X, or point at the glowing orb on a wrist.' },
+		], { width: 0.9 });
+		this.welcome.mesh.visible = false;
+	}
+
+	/** Shows or hides the welcome card (only ever in the dollhouse). */
+	setWelcome(on) {
+		this.welcomeOn = on;
+		this.welcome.mesh.visible = on && this.mode === 'dollhouse';
+	}
+
+	/**
+	 * Puts the welcome card over the back half of the plinth, well above the
+	 * model's top, so from where you stand it shows above the home, not on it.
+	 */
+	placeWelcome() {
+		const card = this.welcome.mesh;
+		const size = this.model ? this.model.bounds.getSize(new THREE.Vector3()).multiplyScalar(this.baseScale) : new THREE.Vector3(1, 0.4, 1);
+		const top = PLINTH_REST + size.y;
+		const h = card.geometry.parameters.height;
+		card.position.set(0, top + 0.3 + h / 2, -this.plinthDistance - size.z / 4);
+		if (card.parent !== this.stage) this.stage.add(card);
+	}
+
+	/** Photo feedback: a short white flash, and a note in front of you for a few seconds. */
+	buildPhotoFeedback() {
+		this.flash = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.BackSide, transparent: true, opacity: 0, depthTest: false, depthWrite: false }));
+		this.flash.renderOrder = 1001;
+		this.flash.visible = false;
+		this.flash.name = 'photo-flash';
+		this.camera.add(this.flash);
+		this.photoNote = new WelcomeCard('Photo saved', [{ small: true, text: 'Files app on the headset, Downloads' }], { width: 0.34 });
+		this.photoNote.mesh.position.set(0, -0.16, -0.7);
+		this.photoNote.mesh.visible = false;
+		this.camera.add(this.photoNote.mesh);
+		this.photoFx = null; // { t, error }
+	}
+
+	/**
+	 * Photo button: the view from your head, level, without the menu, lasers,
+	 * controllers, orbs or arc, saved as a JPEG download (js/photo.js).
+	 */
+	async capturePhoto() {
+		this.photoPending = false;
+		if (this.photoBusy) return;
+		this.photoBusy = true;
+		const hide = [this.welcome.mesh, this.flash, this.photoNote.mesh, this.fadeMesh, this.arc.dots, this.arc.ring, ...this.markers,
+			...this.input.controllers.flatMap((c) => [c.ray, c.grip])];
+		const was = hide.map((o) => o.visible);
+		for (const o of hide) o.visible = false;
+		this.rig.updateMatrixWorld(true);
+		let job;
+		try {
+			// (Drawn at once; only reading the image back waits.)
+			job = takePhoto(this.renderer, this.scene, this.camera.matrixWorld.clone(), { near: XR_NEAR, far: XR_FAR });
+		} finally {
+			hide.forEach((o, i) => { o.visible = was[i]; });
+		}
+		let error = null;
+		try {
+			saveFile(await job, photoName());
+		} catch (e) {
+			console.warn('Photo failed', e);
+			error = e;
+		}
+		this.photoBusy = false;
+		this.photoNote.title = error ? 'The photo could not be saved' : 'Photo saved';
+		this.photoNote.lines = [{ small: true, text: error ? 'Try again, or use the Quest\'s own screenshot.' : 'Files app on the headset, Downloads' }];
+		this.photoNote.draw();
+		this.photoFx = { t: 0, error };
+	}
+
+	/** Advances the flash and the "Photo saved" note. */
+	runPhotoFx(dt) {
+		const f = this.photoFx;
+		if (!f) return;
+		f.t += dt;
+		this.flash.material.opacity = f.error ? 0 : Math.max(0, 0.75 * (1 - f.t / 0.3));
+		this.flash.visible = this.flash.material.opacity > 0;
+		this.photoNote.mesh.visible = f.t < 2.5;
+		if (f.t >= 2.5) { this.photoFx = null; this.flash.visible = false; }
+	}
+
 	buildFade() {
 		this.fadeMesh = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 8), new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, transparent: true, opacity: 0, depthTest: false, depthWrite: false }));
 		this.fadeMesh.renderOrder = 1000;
@@ -348,6 +443,7 @@ export class XRExperience {
 		const size = model.bounds.getSize(new THREE.Vector3());
 		this.baseScale = DOLLHOUSE_SIZE / Math.max(size.x, size.z, 0.01);
 		this.buildPlinth(size.x * this.baseScale, size.z * this.baseScale);
+		this.placeWelcome();
 		// Everything casts and receives shadows (used only when shadows are on),
 		// except the ground (nothing below it) and glass, so sun comes in
 		// through the windows.
@@ -415,6 +511,7 @@ export class XRExperience {
 		this.resetDollhouse();
 		this.dollLift = DOLLHOUSE_LIFT_START;
 		this.enterDollhouse(false); // no head pose yet: measured below, with the first one
+		this.setWelcome(true); // until the menu is first opened
 		// The floor origin is not necessarily where you stand (it can be
 		// anywhere in your play area), so place the plinth in front of the
 		// head as soon as the first head pose arrives.
@@ -435,6 +532,11 @@ export class XRExperience {
 		this.pendingRecentre = false;
 		this.arc.hide();
 		this.closeMenu();
+		this.setWelcome(false);
+		this.photoPending = false;
+		this.photoFx = null;
+		this.flash.visible = false;
+		this.photoNote.mesh.visible = false;
 		this.fadeMesh.visible = false;
 		this.walkSky.visible = false;
 		for (const o of this.orbs) { o.group.removeFromParent(); o.holder = null; }
@@ -558,11 +660,15 @@ export class XRExperience {
 		walk.set('height', { value: this.personHeight });
 		const walls = (this.model?.layers.walls?.children.length ?? 0) > 0;
 		walk.set('solid', walls ? { disabled: false, value: this.solid } : { disabled: true, note: 'No walls', value: false });
-		// Levels: show up to storey 1, 2, ... N (N = all of them).
+		// Levels: a dropdown, since a home can have many. "All levels" first,
+		// then from the top down, each meaning "show up to this storey"
+		// (named as in Sweet Home 3D when the levels have names).
 		const storeys = this.model?.storeys ?? 1;
+		const names = this.model?.storeyNames ?? [];
+		const upTo = (i) => `Up to ${names[i] || `level ${i + 1}`}`;
 		doll.set('levels', storeys < 2 ? { disabled: true, note: 'One level' } : {
 			disabled: false,
-			options: Array.from({ length: storeys }, (_, i) => ({ value: i, label: i === storeys - 1 ? `All (${storeys})` : `${i + 1}` })),
+			options: [{ value: storeys - 1, label: `All levels (${storeys})` }, ...Array.from({ length: storeys - 1 }, (_, k) => storeys - 2 - k).map((i) => ({ value: i, label: upTo(i) }))],
 			value: this.maxStorey ?? storeys - 1,
 		});
 		doll.set('figure', { value: this.figureOn });
@@ -607,10 +713,11 @@ export class XRExperience {
 		panel.setHover(null);
 		panel.mesh.visible = true;
 		this.menu = panel;
+		this.setWelcome(false); // found it: the welcome card has done its job
 	}
 
 	closeMenu() {
-		if (this.menu) this.menu.mesh.visible = false;
+		if (this.menu) { this.menu.closeDropdown(); this.menu.mesh.visible = false; }
 		this.menu = null;
 	}
 
@@ -664,8 +771,9 @@ export class XRExperience {
 				const target = this.menu.hitTest(menuHit.uv);
 				hover ||= target;
 				if (c.state.down.trigger && target) {
-					action = target;
-					if (target.slider) this.drag = { c, id: target.id };
+					// (Opening or closing a dropdown's list is handled by the panel itself.)
+					action = this.menu.press(target);
+					if (action?.slider) this.drag = { c, id: action.id };
 				}
 			} else if (orbHit) {
 				onUI.add(c);
@@ -780,6 +888,7 @@ export class XRExperience {
 				this.updateLabels();
 				break;
 			}
+			case 'photo': this.closeMenu(); this.photoPending = true; break; // taken in update(), once the menu is gone
 			case 'recentre': this.closeMenu(); this.measureDollLift(this.camera.matrix); this.recentre(); break;
 			case 'exit': this.closeMenu(); this.end(); break;
 		}
@@ -817,6 +926,7 @@ export class XRExperience {
 		this.applyView();
 		this.applyStoreys();
 		this.applyDollhouse();
+		this.setWelcome(this.welcomeOn);
 	}
 
 	applyDollhouse() {
@@ -888,6 +998,8 @@ export class XRExperience {
 	}
 
 	updateDollhouse(dt) {
+		// The welcome card turns to face you.
+		if (this.welcome.mesh.visible) this.welcome.mesh.lookAt(this.camera.getWorldPosition(new THREE.Vector3()));
 		if (this.menuButtons()) return;
 		const { onUI, action } = this.pointUI();
 		const { pointable } = this.targets();
@@ -1216,12 +1328,12 @@ export class XRExperience {
 				this.pendingRecentre = false;
 				this.measureDollLift(head); // the tall view, from where the head really is
 				this.recentre(head.clone().premultiply(this.rig.matrix));
-				// Open the menu once per visit so it gets discovered.
-				if (!this.menuShownOnce) { this.menuShownOnce = true; this.openMenu(head); }
 			}
 		}
 		if (this.mode === 'dollhouse') this.updateDollhouse(dt);
 		else if (this.mode === 'walk') this.updateWalk(dt);
+		if (this.photoPending) this.capturePhoto();
+		this.runPhotoFx(dt);
 	}
 }
 
@@ -1272,7 +1384,7 @@ function makeOrb() {
 	const body = new THREE.Group();
 	body.add(core, shell, ring1, ring2);
 	group.add(body, target);
-	group.position.set(0, 0.07, 0.075); // above the back of the hand, toward the wrist
+	group.position.set(0, 0.035, 0.115); // on the wrist: touch it with the other hand to open the menu
 	return { group, body, core, shell, shellMat, ring1, ring2, ringMat, target, holder: null, armed: true, glow: 0, phase: Math.random() * 10 };
 }
 

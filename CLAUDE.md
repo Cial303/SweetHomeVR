@@ -27,6 +27,7 @@ js/optimise.js    merge-by-material and BVH
 js/xr-input.js    controllers, rays, thumbsticks, teleport arc, snap turn
 js/panel.js       canvas-texture VR menu (switches, options, slider, buttons) and controls card
 js/walls.js       solid walls while walking and see-through walls and furniture (headset only)
+js/photo.js       the menu's Photo button: renders the view without the menu and saves a JPEG
 js/lighting.js    time of day (sun from the compass) and on-demand shadows
 js/depth.js       depth shading (headset only): corner gradients baked per vertex, no post-process
 js/storage.js     IndexedDB recent files
