@@ -167,7 +167,7 @@ The app is plain ES modules served as static files: there is no build step and n
 ```bash
 git clone https://github.com/marcalprats/SweetHomeVR.git
 cd SweetHomeVR
-npm test               # parser, lighting, depth-shading and safety tests: no install, no downloads
+npm test               # parser, lighting, depth-shading, headset and safety tests: no install, no downloads
 npm run serve          # the app at http://localhost:8123/ (2D preview; WebXR on a headset needs https)
 ```
 
@@ -177,9 +177,11 @@ The browser-driven checks need the dev tools (Playwright and Meta's IWER headset
 npm install            # dev tools only; the app never needs it
 npx playwright install chromium
 npm run shots          # screenshots of each test home into test-output/
-npm run xr-test        # a scripted VR session on an emulated Quest 2: 77 checks and screenshots
+npm run xr-test        # a scripted VR session on an emulated Quest 2: 111 checks and screenshots
 XR_DEVICE=metaQuest3 npm run xr-test   # or oculusQuest1, metaQuestPro: their controller layouts
 ```
+
+To check that a change looks exactly the same in the headset (a refactor), record a run before it and one after it and compare them; the instructions are at the top of `scripts/xr-test.js` (`XR_STEADY`, `XR_OUT`, `XR_BASELINE`, then `node scripts/xr-compare.js`).
 
 Optional extras:
 
@@ -201,8 +203,17 @@ Where to start reading: [SPEC.md](SPEC.md) is the brief the project was built fr
 index.html        2D UI and import map
 config.js         Dropbox app key, Google API key, defaults
 js/main.js        2D page, renderer, loading, UI
-js/xr.js          VR/AR session: gallery and dollhouse, walk mode, menu orbs
+js/xr.js          VR/AR session: the frame order and the parts below
+js/xr-dollhouse.js  the dollhouse on its plinth: turn, zoom, move, step inside
+js/xr-walk.js     walking at 1:1: stick, teleport, snap turn, grip pull, floors and solid walls
+js/xr-ui.js       wrist orbs, opening and pointing at the menu, welcome card, photo note
+js/xr-menus.js    what the headset menus say and do (cells defined once, rows of ids)
+js/xr-scene.js    gallery room, plinth, skies, markers, scale figure
+js/xr-targets.js  what the lasers, the teleport arc and your feet can hit (no DOM)
+js/xr-tools.js    the hand-held tool system (the tools arrive later)
 js/xr-input.js    controllers, lasers, buttons, thumbsticks, teleport arc
+js/settings.js    every remembered setting, its key and meaning
+js/tween.js, js/haptics.js, js/sound.js   feedback: motion, vibration, synthesised sounds
 js/panel.js       canvas-texture VR menu (switches, options, slider, buttons) and controls card
 js/walls.js       solid walls while walking and see-through walls and furniture (headset only)
 js/photo.js       the menu's Photo button: renders the view without the menu and saves a JPEG

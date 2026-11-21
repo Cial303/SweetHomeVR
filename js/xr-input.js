@@ -6,6 +6,12 @@
 //   [4] A (right) / X (left), [5] B (right) / Y (left)
 //   axes[2], axes[3] thumbstick x / y (y is negative when pushed forward)
 // TeleportArc draws the parabolic teleport arc and its landing ring.
+//
+// Claims: each frame, every controller's c.claim says who owns its trigger,
+// grip and buttons this frame: null (free: the mode uses it), 'ui' (the laser
+// is on the menu or an orb) or 'tool' (a hand-held tool, milestones C-F). They
+// are taken in this order: a held tool, then the UI, then the mode, which
+// only uses what is still free. Sticks are never claimed. Cleared by update().
 
 import * as THREE from 'three';
 
@@ -35,7 +41,7 @@ export class XRInput {
 			ray.add(dot);
 			grip.add(new THREE.Mesh(bodyGeo, bodyMat));
 
-			const c = { index: i, ray, grip, line, dot, source: null, handedness: null, state: emptyState() };
+			const c = { index: i, ray, grip, line, dot, source: null, handedness: null, state: emptyState(), claim: { trigger: null, grip: null, a: null, b: null, stickPress: null } };
 			ray.addEventListener('connected', (e) => {
 				c.source = e.data;
 				c.handedness = e.data.handedness;
@@ -76,6 +82,8 @@ export class XRInput {
 				s.up[k] = !s[k] && prev[k];
 			}
 			c.state = s;
+			const k = c.claim;
+			k.trigger = k.grip = k.a = k.b = k.stickPress = null;
 		}
 	}
 

@@ -8,11 +8,12 @@ import { CONFIG } from '../config.js';
 import { openFiles, UserError, checkDecoders } from './formats.js';
 import { optimiseModel } from './optimise.js';
 import { XRExperience } from './xr.js';
-import { Lighting, TIMES } from './lighting.js';
+import { Lighting } from './lighting.js';
 import { DepthShading } from './depth.js';
 import { checkLink, fileNameOf, sendToQuestUrl, resolveOneDrive, resolveGoogleDrive, looksLikeWebPage, LinkError } from './links.js';
 import { isPairId } from './transfer.js';
 import { Sharer, Joiner } from './pairing.js';
+import { readSetting, writeSetting } from './settings.js';
 import { listRecents, getRecent, addRecent, removeRecent, getLastLink, setLastLink } from './storage.js';
 
 const $ = (id) => document.getElementById(id);
@@ -53,12 +54,10 @@ controls.addEventListener('change', invalidate);
 
 // One hemisphere light and one sun; time of day and optional shadows (lighting.js).
 const lighting = new Lighting(scene, renderer);
-// (The light used to be saved as 'svr.time' on every visit, chosen or not.
-// A new key lets everyone start from the morning default once.)
-const LIGHT_KEYS = { time: 'svr.light', shadows: 'svr.shadows' };
-const savedTime = safeGet(LIGHT_KEYS.time);
-if (TIMES.includes(savedTime)) lighting.setTime(savedTime);
-if (safeGet(LIGHT_KEYS.shadows) === '1') lighting.setShadows(true);
+// (Remembered settings: js/settings.js.)
+const savedTime = readSetting('light');
+if (savedTime) lighting.setTime(savedTime);
+if (readSetting('shadows')) lighting.setShadows(true);
 
 // anchor: dollhouse placement in XR (identity on the 2D page and at 1:1).
 // centerer: puts the model's bottom-centre at the anchor's origin.
@@ -73,8 +72,7 @@ let current = null; // result of openFiles(), with root replaced by the merged m
 
 // Depth shading (corner gradients) for the headset; prepared in the background.
 const depth = new DepthShading();
-const DEPTH_KEY = 'svr.depth';
-depth.setEnabled(safeGet(DEPTH_KEY) === '1');
+depth.setEnabled(readSetting('depth'));
 
 const xr = new XRExperience({ renderer, scene, camera, rig, anchor, centerer, lighting, depth, onEnd: () => {
 	controls.enabled = true;
@@ -88,8 +86,8 @@ const xr = new XRExperience({ renderer, scene, camera, rig, anchor, centerer, li
 
 // When the light changes (here or from the headset menu): remember it and update the views.
 lighting.onChange = () => {
-	safeSet(LIGHT_KEYS.time, lighting.time);
-	safeSet(LIGHT_KEYS.shadows, lighting.shadows ? '1' : '0');
+	writeSetting('light', lighting.time);
+	writeSetting('shadows', lighting.shadows);
 	if (!renderer.xr.isPresenting) scene.background = lighting.background();
 	document.body.classList.toggle('dark-sky', lighting.time === 'night'); // light text over the night sky
 	xr.updateSky();
@@ -102,7 +100,7 @@ lighting.onChange();
 
 // Depth shading: remember the switch, and say how far the preparation is.
 depth.onChange = () => {
-	safeSet(DEPTH_KEY, depth.enabled ? '1' : '0');
+	writeSetting('depth', depth.enabled);
 	$('depth').checked = depth.enabled;
 	$('depth-note').textContent = !depth.enabled || depth.state === 'idle' ? 'in VR only'
 		: depth.state === 'baking' ? `preparing… ${Math.round(depth.progress * 100)}%` : 'ready for VR';
@@ -913,5 +911,3 @@ window.__svr = {
 	get current() { return current; },
 };
 
-function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
-function safeSet(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }

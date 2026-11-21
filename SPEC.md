@@ -195,10 +195,10 @@ Split as the user asked, into milestones with goals, each in phases, using sub-a
 - Text that changes (meter readings, the lens, menu values, level names) stays drawn by code on top of the artwork, with fonts, colours, corner radii and sizes taken from one theme module (`js/theme.js`), so the menus can be restyled too.
 - The service worker's offline cache and the security policy (`img-src 'self'`) cover `assets/`; keep the total small for Quest 2's memory (budget about 8 MB of UI textures).
 
-- **A. Foundations** (no visible change). Goal: room for tools without making `xr.js` bigger.
-  - A1. Split `js/xr.js` into modes, menus and a tool system (phase 18). Done when the tests and screenshots are unchanged.
-  - A2. A small "feel" kit: haptics helper, Web Audio sound synthesiser, short tweens.
-  - Sub-agents: architect (split plan), QA (test coverage before and after).
+- **A. Foundations** (no visible change). Goal: room for tools without making `xr.js` bigger. **Done** (21 Nov 2026).
+  - A1. Split `js/xr.js` into modes, menus and a tool system (phase 18). Done when the tests and screenshots are unchanged. **Built:** `xr.js` (1,611 lines, one class) is now the session and the frame order (420 lines), with its parts: `xr-dollhouse.js` and `xr-walk.js` (the two modes, switched by `setMode()`), `xr-ui.js` (orbs, opening and pointing at the menu, the welcome card, the photo note), `xr-menus.js` (the menus as data: every cell defined once, rows of cell ids, so B's tabs only regroup them; labels; what a click does), `xr-scene.js` (gallery, plinth, skies, markers, figure), `xr-targets.js` (what lasers, the arc and the feet may hit: pure, Node-tested), `xr-tools.js` (the tool system, with no tools yet) and `settings.js` (every remembered setting, its key and meaning, for the page and the headset). Two mechanisms for the tools: **claims** (each frame every controller's trigger, grip and buttons belong to a held tool, then the menu, then the mode, which only uses what is free; this replaces the old "laser on the menu" set) and **photo hiding** (a list the interface adds itself to; measurements and drawings, which live in model space, are never on it). One fix rode along: going back to the dollhouse during a teleport's fade left the view half dark and jumped you on the next walk. Proof that nothing else changed: the emulated session records a fingerprint of the headset scene at 12 moments (what is shown and where, both menus cell by cell, draw calls) and every screenshot, before and after, compared by `scripts/xr-compare.js`.
+  - A2. A small "feel" kit: haptics helper, Web Audio sound synthesiser, short tweens. **Built:** `tween.js` (easing with a spring overshoot, arcs, tweens on the frame clock, feedback capped at 0.3 s unless long), `haptics.js` (named patterns, one per meaning: tick, click, shutter, the marker's buzz) and `sound.js` (synthesised recipes as data: tick, beep, shutter, squeak, whoosh; unlocked by the Enter VR click, paused after 3 quiet seconds to save battery, suspended on leaving VR; levels off / effects / all for milestone B's Sound setting, and an ambience bus for H). Wired into the frame and the session; nothing plays or vibrates yet. The emulator cannot check real sound or vibration (its headless browser cannot even wake a paused audio output): when milestone C plays the first sounds, check on the headset that the first sound after a quiet spell is heard; if not, drop the pause.
+  - Sub-agents: architect (split plan), QA (test coverage before and after). QA's audit added 29 checks to the emulated session before anything moved (leaving VR mid-teleport, trigger ownership, what a photo hides, lasers, snap turn, two-hand pull, the fade, the headset's own re-centre).
 - **B. Words and the scale model** (decided: "dollhouse" becomes **scale model**; it is Matterport's real-estate word, while architects say model or scale model).
   - B1. Rename in every on-screen word and the docs ("Back to the scale model"); code may keep `dollhouse` internally, with a comment.
   - B2. The plinth shows the true scale ratio (e.g. "1:42"), and the zoom settles gently on standard architectural scales (1:20, 1:25, 1:50, 1:100, 1:200) when near them.
@@ -224,8 +224,11 @@ js/main.js        app state machine (home / dollhouse / walk), renderer, XR sess
 js/sh3d.js        SH3D parser and scene builder (pure functions, unit-testable)
 js/formats.js     OBJ / zip / GLB / DAE / 3DS loading and unit detection
 js/optimise.js    merge-by-material and BVH
-js/xr-input.js    controllers, rays, thumbsticks, teleport arc, snap turn
+js/xr.js          XR session, modes and the frame order (parts: xr-dollhouse, xr-walk, xr-ui, xr-menus, xr-scene, xr-targets, xr-tools)
+js/xr-input.js    controllers, rays, thumbsticks, teleport arc, snap turn, claims
 js/panel.js       canvas-texture VR menu
+js/settings.js    remembered settings (keys, defaults, meanings)
+js/tween.js, js/haptics.js, js/sound.js   feedback: motion, vibration, synthesised sound
 js/storage.js     IndexedDB recent files
 vendor/…          three.js, addons, fflate, three-mesh-bvh, with licences
 tests/            Node tests for sh3d.js against fixture files
@@ -284,7 +287,7 @@ README.md         how to host, use and update
       - The welcome card, the controls card and the illustrated guide (milestone G) explain the fan ("Look at your left hand: camera, meter, marker. Take one with your right hand.", mirrored when switched). Controllers only for now; hand tracking (BRINK's picture-frame gesture) later.
       - Performance: each tool is a few hundred triangles built from three.js primitives, merged per tool; the viewfinder is the one extra render, throttled as above.
       - No object identity is needed (decided with the user): measuring works on surface points, not on "this wall" or "this sofa".
-  18. Planned: split `xr.js` into modes, tools and menus before the tools are added.
+  18. Split `xr.js` into modes, tools and menus before the tools are added. Done in milestone A (see "Roadmap: hand-held tools").
   9. Headsets (updated with the user): Quest 3 / 3S is the main target, so every feature is designed and checked for it first. Quest 2 and Quest Pro are fully supported and their budget (draw calls, triangles) is the floor for every feature. Quest 1 is not supported (decided with the user): its browser no longer updates and Meta no longer accepts Quest 1 apps. The viewer may still open there, but nothing is tested or held back for it. Built and tested on Quest 2. `XR_DEVICE=metaQuest3 | oculusQuest1 | metaQuestPro npm run xr-test` runs the scripted session with those controller layouts (all pass); every headset change runs the default (Quest 2) and Quest 3. A real Quest 3 is untested so far.
   6. Pre-release audit (done): safety (see "Safety"), bugs, and performance: the 2D page redraws only when something changes (2 frames a second when idle), raycast target lists are cached per model, the lighting change check allocates nothing, and loading pauses between furniture models so progress is painted.
 - Keep the code plain and commented. No frameworks beyond three.js.

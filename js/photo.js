@@ -88,6 +88,23 @@ export async function takePhoto(renderer, scene, eye, { width = 1920, height = 1
 	return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('The photo could not be encoded'))), 'image/jpeg', quality));
 }
 
+/**
+ * Hides `objects` (any iterable of Object3Ds) while `draw()` runs, then puts
+ * each one back as it was; returns what draw() returned. The Photo button
+ * draws the view without the menu, lasers, controllers, orbs and other
+ * interface (js/xr.js keeps the list: XRExperience.hideFromPhotos()).
+ */
+export function withHidden(objects, draw) {
+	const was = [];
+	for (const o of objects) { was.push(o.visible); o.visible = false; }
+	try {
+		return draw();
+	} finally {
+		let i = 0;
+		for (const o of objects) o.visible = was[i++];
+	}
+}
+
 /** A file name like "Sweet Home VR 2026-11-21 10.42.07.jpg". */
 export function photoName(date = new Date()) {
 	const p = (n) => String(n).padStart(2, '0');
