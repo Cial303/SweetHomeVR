@@ -1,18 +1,18 @@
 # Sweet Home VR
 
-WebXR viewer for Meta Quest 2 that opens Sweet Home 3D (`.sh3d`) files directly (plus OBJ/zip and GLB): view the home as a tabletop dollhouse, then walk through it at 1:1 scale. Replaces SketchUp Viewer for Quest for that one job.
+WebXR viewer for Meta Quest (Quest 3/3S first; Quest 2 and Pro fully supported; Quest 1 best effort) that opens Sweet Home 3D (`.sh3d`) files directly (plus OBJ/zip and GLB): view the home as a tabletop dollhouse, then walk through it at 1:1 scale. Replaces SketchUp Viewer for Quest for that one job.
 
 **SPEC.md is the source of truth** for SH3D parsing rules, furniture placement, walls/openings/rooms, controls and performance targets. Read the relevant section before touching that area. Don't propose alternatives to decisions in SPEC.md unless there is a concrete blocker, and explain the blocker.
 
 ## Hard constraints
 
-- three.js + WebXR in the Meta Quest Browser. No Unity/native app, no frameworks beyond three.js.
+- three.js + WebXR in the Meta Quest Browser. No Unity/native app, no frameworks beyond three.js. Keep it portable: the same web app may later be packaged as an installable app (PWA), so readers and geometry code stay free of the page, and browser-only code (file pickers, IndexedDB, downloads, pairing) stays in few, clearly named modules.
 - Plain ES modules + import map, **no build step**. All runtime dependencies vendored in `vendor/` (three.js + used addons, fflate, three-mesh-bvh, PeerJS, the Kalam font of the welcome notes) with their licences. Nothing loads from a CDN at runtime. Apart from the storage service of a link the user loads (for Google Drive and OneDrive links, that service's API: see SPEC.md, "Links from storage services"), the one outside service is the PeerJS pairing server, contacted only when Send to my Quest sends a file (`connect-src` in `index.html` must match `CONFIG.pairing`; `npm test` checks it).
 - Hosted on GitHub Pages (HTTPS is required for WebXR). The same URL works on desktop Chrome/Safari as a 2D orbit preview.
 - Quest Browser file picker: read picked files with `await file.arrayBuffer()` immediately; never create a blob URL from a picked `File`; no restrictive `accept` attribute; accept `.zip` wherever `.sh3d` is accepted.
-- Quest 2 is a phone GPU: merged geometry by material (< ~150 draw calls), BVH for every raycast, Lambert materials. Shadows only as the optional on-demand map in lighting.js (never per-frame); no post-process or temporal anti-aliasing (flickers).
+- Quest 2 is the performance floor (a phone GPU): merged geometry by material (< ~150 draw calls), BVH for every raycast, Lambert materials. Shadows only as the optional on-demand map in lighting.js (never per-frame); no post-process or temporal anti-aliasing (flickers).
 - Model files and links are untrusted input (see "Safety" in SPEC.md): never fetch a URL found inside a model, never build HTML from file content (use `textContent`), keep the zip, download and texture limits, and keep the Content Security Policy in `index.html` strict (no `unsafe-inline` or `unsafe-eval` for scripts, no outside hosts). If the import map changes, update its hash in the policy; `npm test` checks it.
-- Out of scope: editing, collaboration, accounts, measurements, scenes.
+- Out of scope: editing the model, collaboration, accounts, scenes. Measuring and drawing are in scope (SPEC.md phase 17) but nothing they make is saved; the Photo button keeps them in a picture.
 
 ## Layout
 
@@ -50,9 +50,10 @@ docs/             README pictures (from the example home only, never a personal 
 - Keep code plain and commented. `sh3d.js` must not touch the DOM so it runs in Node tests.
 - When unsure about a Sweet Home 3D detail, check the official sources (`HomeXMLExporter`, `ModelManager`, `Wall3D`, `Room3D`) rather than guessing.
 - Before finishing a parser/scene change: run `npm test`, run `npm run shots`, and look at the screenshots against what Sweet Home 3D shows.
-- Before finishing an XR change: run `npm run xr-test` (Meta's IWER emulator drives a fake Quest 2 in headless Chromium) and look at the `test-output/xr-*.png` screenshots. It cannot judge comfort or frame rate: give the user an on-headset checklist.
+- Before finishing an XR change: run `npm run xr-test` (Meta's IWER emulator drives a fake Quest 2 in headless Chromium) and `XR_DEVICE=metaQuest3 npm run xr-test`, and look at the `test-output/xr-*.png` screenshots. It cannot judge comfort or frame rate: give the user an on-headset checklist.
 - `?nomerge` on the page URL skips the geometry merge, to tell merge bugs from loader bugs.
 - Don't commit files the user drops in the folder (e.g. `.rtf`, `.webloc`); stage paths explicitly.
 - This folder lives in Dropbox: keep `node_modules/` and Playwright output excluded from Dropbox sync and from git.
 - Never commit personal home files or the Dropbox app secret (the Chooser only needs the public app key).
+- `planning/` (ignored by git, may be absent in a clone) holds private product notes. When it exists, read `planning/architecture-decisions.md` before architecture work. Never copy from it into tracked files, commit messages or outside services.
 - The repository is public and shared with other developers: everything must work from a fresh clone (`npm test` with no install and no downloaded fixtures; the browser tests fall back to `examples/example-home.sh3d`). Keep file names, comments and pictures free of personal details.

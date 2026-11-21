@@ -6,13 +6,15 @@ Paste everything below the line into Claude Code, running in an empty folder on 
 
 ## Goal
 
-Build **Sweet Home VR**, a simple VR viewer for Meta Quest 2 that opens **Sweet Home 3D (.sh3d)** files directly, with no conversion step. It should also open OBJ (plain, or zipped with MTL and textures) and GLB. It replaces the discontinued SketchUp Viewer for Quest for one job only: looking at a home model as a dollhouse, then walking through it at real 1:1 scale.
+Build **Sweet Home VR**, a simple VR viewer for Meta Quest that opens **Sweet Home 3D (.sh3d)** files directly, with no conversion step. It should also open OBJ (plain, or zipped with MTL and textures) and GLB. It replaces the discontinued SketchUp Viewer for Quest for one job only: looking at a home model as a dollhouse, then walking through it at real 1:1 scale.
 
-Out of scope: editing, collaboration, accounts, measurements and scenes (possible later phases).
+Headsets (decided with the user): Quest 3 / 3S is the main target; Quest 2 and Quest Pro are fully supported and set the performance floor; Quest 1 is best effort (see phase 9 under "Working style").
+
+Out of scope: editing the model, collaboration, accounts and scenes. Measuring and drawing are in scope (phase 17), but nothing they make is saved: a measurement or a drawing lasts until you leave the home, and the Photo button keeps it in a picture.
 
 ## Platform decision (already made; don't revisit)
 
-- **WebXR web app** running in the **Meta Quest Browser**, built with **three.js**. Don't build a native Unity or Android app: no developer mode, no sideloading, no store.
+- **WebXR web app** running in the **Meta Quest Browser**, built with **three.js**. Don't build a native Unity or Android app: no developer mode, no sideloading. The same web app may later also be packaged as an installable app (a PWA) without a rewrite, so keep it portable: the file readers and geometry code stay free of the page (`sh3d.js` already runs in Node), and browser-specific code (file picking, storage, saving, downloads, pairing) stays in few, clearly named modules.
 - Plain ES modules and an import map, with **no build step**. Vendor every dependency into `/vendor` (three.js core plus the addons used, `fflate` for unzipping, `three-mesh-bvh` for fast raycasting) so nothing loads from a CDN at runtime.
 - WebXR needs a **secure context (HTTPS)**. Host on **GitHub Pages**. Create the repo and enable Pages with `gh`, after asking me for the repo name. A plain `http://192.168.x.x` server on the Mac will **not** run WebXR on the Quest.
 - The same URL must work on the Mac's desktop Chrome or Safari as a 2D preview (orbit-controlled dollhouse), so I can check that a file parses before putting the headset on.
@@ -213,7 +215,16 @@ README.md         how to host, use and update
   12. Drag and drop (computers): files dropped anywhere on the page open; a "Drop to open" frame shows while dragging; a dropped link goes into the link box and waits for Load. The welcome notes say "Drop a file here to start" on computers only.
   13. VR settings (added at the user's request): Solid walls, See-through, and the settings-list menu (see "Experience and controls").
   14. Onboarding and pictures (added at the user's request): a welcome card above the dollhouse instead of the menu opening by itself, the orbs on the wrists, a Levels dropdown with the level names, and a Photo button (see "Experience and controls").
-  9. Headsets: built and tested on Quest 2. `XR_DEVICE=metaQuest3 | oculusQuest1 | metaQuestPro npm run xr-test` runs the scripted session with those controller layouts (all pass); real Quest 3 and Quest 1 devices are untested.
+  15. Compressed GLB (added at the user's request: many SketchUp, Rhino and Blender exports use it): see "Other formats".
+  16. Planned: open and switch models from inside VR (Recent, the example, received files), so nobody has to leave VR for another model. The 2D page stays the place to manage files.
+  17. Planned, decided with the user: a **tape measure** and a **marker**, in both modes. Their use case: a table looks too long; measure it (1.60 m), the size stays, write "shorter" next to it, save a photo.
+      - Measure: pull the trigger on one point, then on another. The points are where the laser hits, so whole walls and floor-to-ceiling heights work; the controller itself can be one end, for measuring in the air. A line shows its real length ("1.60 m"; in the dollhouse divided by its scale), the label turned towards you. Lines within a few degrees of vertical or level snap straight. Several at once; undo the last, or clear all.
+      - Marker: hold the trigger to draw strokes in the air from the controller's tip, in a few colours (red, blue, black, white); undo and clear. Measurements and strokes belong to the home: they move with the dollhouse and stay put while walking.
+      - While a tool is on, the trigger belongs to the tool (no teleport or stepping inside by accident); the right stick still teleports. Tool row in the menu: Off / Measure / Draw.
+      - Nothing is saved: they last until you leave the home or open another model. Photo keeps them in the picture (it still hides the menu, lasers and the rest).
+      - No object identity is needed (decided with the user): measuring works on surface points, not on "this wall" or "this sofa".
+  18. Planned: split `xr.js` into modes, tools and menus before the tools are added.
+  9. Headsets (updated with the user): Quest 3 / 3S is the main target, so every feature is designed and checked for it first. Quest 2 and Quest Pro are fully supported and their budget (draw calls, triangles) is the floor for every feature. Quest 1 is best effort: its browser no longer updates and Meta no longer accepts Quest 1 apps, so no feature waits for it, but avoid very new browser features where an older way exists; drop it only if something important can't work there. Built and tested on Quest 2. `XR_DEVICE=metaQuest3 | oculusQuest1 | metaQuestPro npm run xr-test` runs the scripted session with those controller layouts (all pass); every headset change runs the default (Quest 2) and Quest 3. Real Quest 3 and Quest 1 devices are untested.
   6. Pre-release audit (done): safety (see "Safety"), bugs, and performance: the 2D page redraws only when something changes (2 frames a second when idle), raycast target lists are cached per model, the lighting change check allocates nothing, and loading pauses between furniture models so progress is painted.
 - Keep the code plain and commented. No frameworks beyond three.js.
 - When unsure about a Sweet Home 3D detail, check the official source (`HomeXMLExporter`, `ModelManager`, `Wall3D`, `Room3D` in the Sweet Home 3D sources) rather than guessing.
