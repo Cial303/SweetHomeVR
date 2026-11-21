@@ -13,3 +13,6 @@ tests/fixtures/private/
 /*.png
 /*.rtf
 /*.webloc
+
+# Private planning notes (business, store, pricing): never published
+/planning/
