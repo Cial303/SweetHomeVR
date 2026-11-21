@@ -85,6 +85,7 @@ export class EntryStore {
 		this.urls = new Map();
 		this.children = []; // stores of zipped models inside this one
 		this.blocked = 0; // links to other servers found inside models (never fetched)
+		this.notes = new Set(); // things the status line should mention (e.g. textures that can't be shown)
 		this.busy = false;
 		this.waiters = [];
 		this.manager = new THREE.LoadingManager();
@@ -141,6 +142,9 @@ export class EntryStore {
 
 	/** Total links to other servers that were blocked, including nested archives. */
 	blockedLinks() { return this.children.reduce((n, c) => n + c.blockedLinks(), this.blocked); }
+
+	/** Notes for the status line, including nested archives'. */
+	allNotes() { return [...new Set([...this.notes, ...this.children.flatMap((c) => c.allNotes())])]; }
 
 	get(path) { const p = this.find(path); return p ? this.entries.get(p) : null; }
 
@@ -228,6 +232,125 @@ function simplifyMaterials(obj) {
 }
 
 // ---------------------------------------------------------------------------
+// Compressed glTF: Draco and meshopt geometry; KTX2 textures
+// ---------------------------------------------------------------------------
+//
+// Many exports (SketchUp, Rhino, Blender, gltfpack, glTF-Transform) compress
+// their GLB. The decoders are vendored (scripts/vendor.js) and load only when
+// a file declares that it needs them. They run WebAssembly, and Draco decodes
+// in workers that three.js builds from the vendored files: that is why the
+// page's security policy allows 'wasm-unsafe-eval' (WebAssembly only, never
+// JavaScript eval) and blob: workers.
+//
+// KTX2 (Basis Universal) textures can't be decoded under that policy: the
+// transcoder three.js ships builds functions from strings at run time. Such a
+// file still opens: with its ordinary fallback images when it has them,
+// otherwise with plain surfaces in the model's own colours, and a note.
+
+const LIBS = new URL('../vendor/three/addons/libs/', import.meta.url).href;
+
+/** glTF extensions that need a decoder, with the name used in messages. */
+export const GLTF_COMPRESSION = {
+	KHR_draco_mesh_compression: 'Draco',
+	EXT_meshopt_compression: 'meshopt',
+	KHR_meshopt_compression: 'meshopt',
+	KHR_texture_basisu: 'KTX2',
+};
+
+/** The extensions a .glb or .gltf file declares: { used, required }. */
+export function gltfExtensions(bytes) {
+	let json;
+	try {
+		if (sniff(bytes) === 'glb') {
+			// 12-byte header, then the first chunk: length, type "JSON", data.
+			const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+			if (dv.getUint32(16, true) !== 0x4e4f534a) return { used: [], required: [] };
+			json = JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + dv.getUint32(12, true))));
+		} else {
+			json = JSON.parse(new TextDecoder().decode(bytes));
+		}
+	} catch { return { used: [], required: [] }; }
+	const list = (v) => (Array.isArray(v) ? [...new Set(v.filter((e) => typeof e === 'string'))] : []);
+	const required = list(json?.extensionsRequired);
+	return { used: [...new Set([...list(json?.extensionsUsed), ...required])], required };
+}
+
+// One shared instance of each decoder, created on first use. A failed start
+// is forgotten, so the next file tries again.
+const decoders = new Map();
+function decoder(name, make) {
+	if (!decoders.has(name)) decoders.set(name, make().catch((e) => { decoders.delete(name); throw e; }));
+	return decoders.get(name);
+}
+
+const DECODERS = {
+	// The Draco loader keeps its own loading manager: it fetches our vendored
+	// decoder files, which the model's store would (rightly) refuse.
+	draco: () => import('three/addons/loaders/DRACOLoader.js').then(({ DRACOLoader }) => {
+		const d = new DRACOLoader();
+		d.setDecoderPath(`${LIBS}draco/gltf/`); // WebAssembly build (the default where WebAssembly exists)
+		d.setWorkerLimit(2); // each worker holds its own decoder: keep memory low on Quest 2
+		return d;
+	}),
+	meshopt: () => import('three/addons/libs/meshopt_decoder.module.js').then(async ({ MeshoptDecoder }) => {
+		await MeshoptDecoder.ready; // compiles its WebAssembly on the page
+		return MeshoptDecoder;
+	}),
+};
+
+/**
+ * Stands in for a KTX2 texture loader when a file has no fallback images:
+ * every KTX2 texture becomes one white pixel, so surfaces show the model's
+ * own colours instead of the whole file failing.
+ */
+const KTX2_STAND_IN = {
+	load(url, onLoad) {
+		const t = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+		t.needsUpdate = true;
+		onLoad(t);
+	},
+};
+
+/** Gives the glTF loader the decoders this file needs; returns notes for the status line. */
+async function useDecoders(loader, exts) {
+	const notes = [];
+	if (exts.used.includes('KHR_draco_mesh_compression')) loader.setDRACOLoader(await decoder('draco', DECODERS.draco));
+	if (exts.used.includes('EXT_meshopt_compression') || exts.used.includes('KHR_meshopt_compression')) loader.setMeshoptDecoder(await decoder('meshopt', DECODERS.meshopt));
+	if (exts.used.includes('KHR_texture_basisu')) {
+		// Without a KTX2 loader, three.js uses each texture's fallback image.
+		// A file that requires KTX2 has none: plain surfaces, and say so.
+		if (exts.required.includes('KHR_texture_basisu')) {
+			loader.setKTX2Loader(KTX2_STAND_IN);
+			notes.push("Its KTX2 textures can't be shown yet, so its surfaces are plain.");
+		}
+	}
+	return notes;
+}
+
+/** A glTF that fails to load: say which compression it uses, as that is the usual cause. */
+function explainGltfError(e, exts) {
+	const kinds = [...new Set(exts.used.map((x) => GLTF_COMPRESSION[x]).filter(Boolean))];
+	if (kinds.length && !(e instanceof UserError)) return new Error(`${e?.message || e} (the file uses ${kinds.join(' and ')} compression)`);
+	return e;
+}
+
+/** For the browser tests: starts each decoder and reports whether it really runs here. */
+export async function checkDecoders() {
+	const within = (p, ms = 15000) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('no answer (blocked?)')), ms))]);
+	const out = {};
+	try { out.meshopt = typeof (await within(decoder('meshopt', DECODERS.meshopt))).decodeGltfBuffer === 'function' || 'no decoder'; } catch (e) { out.meshopt = e.message; }
+	// Draco compiles its WebAssembly inside a worker. Bad input must come back
+	// as a decoding error: no answer at all means the worker or its
+	// WebAssembly was blocked.
+	try {
+		const d = await within(decoder('draco', DECODERS.draco));
+		await within(new Promise((ok, no) => d.parse(new Uint8Array(64).fill(7).buffer, ok, no)));
+		out.draco = 'decoded garbage?';
+	} catch (e) { out.draco = /blocked|Refused|CompileError/i.test(e.message) ? e.message : true; }
+	return out;
+}
+
+// ---------------------------------------------------------------------------
 // Model loading from entries
 // ---------------------------------------------------------------------------
 
@@ -252,8 +375,11 @@ export async function loadModelEntry(store, path) {
 		case 'glb':
 		case 'gltf': {
 			const loader = new GLTFLoader(store.manager);
+			const exts = gltfExtensions(bytes);
+			for (const n of await useDecoders(loader, exts)) store.notes.add(n);
 			const data = kind === 'glb' ? bytes.slice().buffer : new TextDecoder().decode(bytes);
-			const gltf = await loader.parseAsync(data, base);
+			let gltf;
+			try { gltf = await loader.parseAsync(data, base); } catch (e) { throw explainGltfError(e, exts); }
 			return simplifyMaterials(gltf.scene);
 		}
 		case 'dae': {

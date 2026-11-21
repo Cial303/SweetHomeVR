@@ -28,6 +28,17 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.log(`  [${m.type()}] ${m.text()}`); });
 page.on('pageerror', (e) => console.log('  [pageerror]', e.message));
 
+// The compressed-glTF decoders (Draco, meshopt, KTX2) must start under the
+// page's real security policy: WebAssembly, and workers built from blob: URLs.
+let failed = false;
+if (!filter) {
+	await page.goto(`http://localhost:${port}/?test`);
+	const dec = await page.evaluate(() => window.__svr.decoders());
+	const ok = Object.values(dec).every((v) => v === true);
+	console.log(`• compressed glTF decoders: ${ok ? 'all start' : 'FAILED'}`, JSON.stringify(dec));
+	failed ||= !ok;
+}
+
 for (const fx of fixtures) {
 	const name = path.basename(fx).replace(/\.[^.]+$/, '');
 	console.log(`• ${fx}`);
@@ -49,3 +60,4 @@ for (const fx of fixtures) {
 await browser.close();
 server.close();
 console.log(`Screenshots in ${path.relative(process.cwd(), outDir)}/`);
+if (failed) process.exitCode = 1;

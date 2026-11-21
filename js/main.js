@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CONFIG } from '../config.js';
-import { openFiles, UserError } from './formats.js';
+import { openFiles, UserError, checkDecoders } from './formats.js';
 import { optimiseModel } from './optimise.js';
 import { XRExperience } from './xr.js';
 import { Lighting, TIMES } from './lighting.js';
@@ -240,9 +240,10 @@ async function load(files, label, source = { type: 'file' }) {
 		invalidate();
 		// Links to other websites written inside a model are never followed.
 		const blocked = current.store?.blockedLinks() ?? 0;
+		const notes = current.store?.allNotes() ?? [];
 		// Small windows: get the files card out of the way of the model.
 		if (window.matchMedia('(max-width: 720px), (max-height: 520px)').matches) setCollapsed(true);
-		setStatus(`Loaded ${label}.${blocked ? ` ${blocked} link${blocked > 1 ? 's' : ''} to other websites inside the file ${blocked > 1 ? 'were' : 'was'} ignored.` : ''}`);
+		setStatus(`Loaded ${label}.${blocked ? ` ${blocked} link${blocked > 1 ? 's' : ''} to other websites inside the file ${blocked > 1 ? 'were' : 'was'} ignored.` : ''}${notes.map((n) => ` ${n}`).join('')}`);
 		showStats();
 		// Once the textures have arrived: shrink any oversized ones and free
 		// the unpacked files, which the scene no longer needs.
@@ -287,7 +288,10 @@ function prepareTextures(root) {
 			const img = t.image;
 			const w = img?.naturalWidth || img?.width || 0, h = img?.naturalHeight || img?.height || 0;
 			let changed = false;
-			if (w && h && Math.max(w, h) > max) {
+			if (img?.data) {
+				// Raw pixel data (TGA images, the KTX2 stand-in): it can't be
+				// drawn onto a canvas, so it is left as it is.
+			} else if (w && h && Math.max(w, h) > max) {
 				const k = max / Math.max(w, h);
 				const c = document.createElement('canvas');
 				c.width = Math.max(1, Math.round(w * k));
@@ -902,6 +906,7 @@ window.__svr = {
 	frame: (view) => { frame(view); controls.update(); renderer.render(scene, camera); },
 	look: (pos, target) => { camera.position.set(...pos); controls.target.set(...target); controls.update(); renderer.render(scene, camera); },
 	stats: () => ({ ...(current?.stats || {}), ...sceneStats(current?.root || new THREE.Group()), merged: current?.merged }),
+	decoders: checkDecoders,
 	scene,
 	xr,
 	renderer,

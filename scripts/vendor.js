@@ -18,6 +18,8 @@ const ADDONS = [
 	'loaders/GLTFLoader.js',
 	'loaders/ColladaLoader.js',
 	'loaders/TDSLoader.js',
+	'loaders/DRACOLoader.js',
+	'libs/meshopt_decoder.module.js',
 	'utils/BufferGeometryUtils.js',
 ];
 
@@ -48,6 +50,22 @@ copy(path.join(nm, 'three/build/three.core.js'), path.join(vendor, 'three/three.
 copy(path.join(nm, 'three/LICENSE'), path.join(vendor, 'three/LICENSE'));
 const seen = new Set();
 for (const a of ADDONS) copyModule(path.join(nm, 'three/examples/jsm'), path.join(vendor, 'three/addons'), a, seen);
+
+// Decoders for compressed glTF, loaded only when a file uses them (js/formats.js):
+// Draco geometry (Apache-2.0, Google; the smaller glTF-only build). The meshopt
+// decoder (MIT) came with the addons above. Not vendored: the Basis Universal
+// transcoder for KTX2 textures, which builds functions from strings at run
+// time (Emscripten's embind), and the page's security policy forbids that.
+const libs = path.join(nm, 'three/examples/jsm/libs');
+for (const f of ['draco/gltf/draco_wasm_wrapper.js', 'draco/gltf/draco_decoder.wasm']) {
+	copy(path.join(libs, f), path.join(vendor, 'three/addons/libs', f));
+}
+// The Apache License 2.0 text, taken from a dev dependency that ships it
+// unchanged (Playwright), up to the end of its terms.
+const apache = fs.readFileSync(path.join(nm, 'playwright-core/LICENSE'), 'utf8');
+const END = 'END OF TERMS AND CONDITIONS';
+const terms = apache.slice(0, apache.indexOf(END) + END.length) + '\n';
+fs.writeFileSync(path.join(vendor, 'three/addons/libs/draco/LICENSE'), 'Draco 3D Data Compression decoder. Copyright Google LLC. https://github.com/google/draco\n\n' + terms);
 
 // three-mesh-bvh (single ES module that imports 'three')
 copy(path.join(nm, 'three-mesh-bvh/build/index.module.js'), path.join(vendor, 'three-mesh-bvh/index.module.js'));

@@ -102,7 +102,7 @@ Resolve MTL and texture paths relative to the model's folder through a `LoadingM
 ## Other formats
 
 - **OBJ:** a single `.obj`, multiple picked files, or a `.zip` holding obj, mtl and textures. Units default to Auto (largest dimension > 100 → cm, otherwise m), with a cm / m / mm / in override. Sweet Home 3D's own OBJ export is in cm.
-- **GLB/glTF:** metres.
+- **GLB/glTF:** metres. Compressed files open too (phase 15, added at the user's request): **Draco** and **meshopt** geometry are decoded by three.js's own decoders, vendored and loaded only when a file declares the extension (`gltfExtensions` in `js/formats.js`; Draco runs in two workers, meshopt on the page). **KTX2** (Basis Universal) textures can't be decoded under the security policy: the transcoder three.js ships builds functions from strings at run time (Emscripten's embind), which needs `unsafe-eval`. So the loader uses each texture's ordinary fallback image when the file has one; a file that requires KTX2 opens with plain surfaces in its own colours, and the status line says its KTX2 textures can't be shown yet. Real KTX2 support would need a transcoder built without run-time code generation, or one running in a worker served as its own file (decision for the user).
 
 ## Performance (Quest 2 is a phone GPU)
 
@@ -127,7 +127,7 @@ A model file and a pasted link are untrusted input: the viewer will be shared, a
 - **No outside requests from a model.** The loaders' URL modifier (`EntryStore`) serves only the file's own entries (`mem:`), embedded `data:` URIs and `blob:` URLs made from the file's bytes. Any other URL written in an MTL, glTF, COLLADA or 3DS file is replaced by a white pixel and counted; the status line reports how many were ignored.
 - **Archive limits.** Before unpacking, the declared sizes are summed: over 1 GB or 50,000 entries (including nested model archives, which share one budget) the file is refused with a clear message.
 - **Links.** `js/links.js`: only `https:` (or same-origin) links are downloaded, with a 500 MB cap, `credentials: 'omit'` and no referrer. `?model=` opens by itself only for a same-origin address; a link to another site is placed in the link field and waits for a click.
-- **Page.** Content Security Policy in `index.html` (`default-src 'none'`, scripts from `'self'` plus the import map's hash, connections to `https:` only), `referrer` set to `no-referrer`, and no HTML is ever built from file names or file content.
+- **Page.** Content Security Policy in `index.html` (`default-src 'none'`, scripts from `'self'` plus the import map's hash, `'wasm-unsafe-eval'` for the vendored glTF decoders (WebAssembly only, never JavaScript `eval`), workers only from `blob:` URLs (three.js builds the Draco workers from the vendored decoder), connections to `https:` only), `referrer` set to `no-referrer`, and no HTML is ever built from file names or file content.
 - **Parser.** Number attributes that are missing, NaN or infinite fall back to their defaults; impossible character references are left as written.
 - **Memory.** Textures above `CONFIG.maxTextureSize` (2048) are shrunk after loading. Once the textures have loaded, the unpacked files and their blob URLs are freed.
 - Accepted limits: a hostile file can still make the tab slow or crash it (huge geometry, a slow regular expression in Home.xml, an image that decodes to a huge bitmap). GitHub Pages cannot send headers, so framing by another site cannot be forbidden (`frame-ancestors`).
