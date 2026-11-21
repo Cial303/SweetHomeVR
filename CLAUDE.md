@@ -1,6 +1,6 @@
 # Sweet Home VR
 
-WebXR viewer for Meta Quest (Quest 3/3S first; Quest 2 and Pro fully supported; Quest 1 best effort) that opens Sweet Home 3D (`.sh3d`) files directly (plus OBJ/zip and GLB): view the home as a tabletop dollhouse, then walk through it at 1:1 scale. Replaces SketchUp Viewer for Quest for that one job.
+WebXR viewer for Meta Quest (Quest 3, 3S, 2 and Pro; Quest 3/3S first; Quest 1 not supported) that opens Sweet Home 3D (`.sh3d`) files directly (plus OBJ/zip and GLB): view the home as a tabletop dollhouse, then walk through it at 1:1 scale. Replaces SketchUp Viewer for Quest for that one job.
 
 **SPEC.md is the source of truth** for SH3D parsing rules, furniture placement, walls/openings/rooms, controls and performance targets. Read the relevant section before touching that area. Don't propose alternatives to decisions in SPEC.md unless there is a concrete blocker, and explain the blocker.
 
@@ -12,6 +12,7 @@ WebXR viewer for Meta Quest (Quest 3/3S first; Quest 2 and Pro fully supported; 
 - Quest Browser file picker: read picked files with `await file.arrayBuffer()` immediately; never create a blob URL from a picked `File`; no restrictive `accept` attribute; accept `.zip` wherever `.sh3d` is accepted.
 - Quest 2 is the performance floor (a phone GPU): merged geometry by material (< ~150 draw calls), BVH for every raycast, Lambert materials. Shadows only as the optional on-demand map in lighting.js (never per-frame); no post-process or temporal anti-aliasing (flickers).
 - Model files and links are untrusted input (see "Safety" in SPEC.md): never fetch a URL found inside a model, never build HTML from file content (use `textContent`), keep the zip, download and texture limits, and keep the Content Security Policy in `index.html` strict (no `unsafe-inline` or `unsafe-eval` for scripts, no outside hosts). The only exceptions, approved by the user for compressed GLB: `'wasm-unsafe-eval'` (WebAssembly only) and `worker-src blob:` (the decoders' workers, built from vendored files); never add a decoder that needs JavaScript eval. If the import map changes, update its hash in the policy; `npm test` checks it.
+- Every interface follows Dieter Rams' ten principles as SPEC.md applies them ("Design principles"): self-explanatory, unobtrusive, honest, consistent in every detail, as little design as possible. Hand-held tools follow BRINK Traveler's feel (SPEC.md phase 17) without copying its art.
 - Out of scope: editing the model, collaboration, accounts, scenes. Measuring and drawing are in scope (SPEC.md phase 17) but nothing they make is saved; the Photo button keeps them in a picture.
 
 ## Layout
